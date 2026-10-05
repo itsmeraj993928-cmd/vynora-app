@@ -1,0 +1,131 @@
+{
+  "entities": {
+    "User": {
+      "collection": "users",
+      "fields": {
+        "id": { "type": "string" },
+        "email": { "type": "string" },
+        "username": { "type": "string" },
+        "fullName": { "type": "string" },
+        "avatarUrl": { "type": "string" },
+        "bio": { "type": "string" },
+        "website": { "type": "string" },
+        "followersCount": { "type": "number" },
+        "followingCount": { "type": "number" },
+        "postsCount": { "type": "number" },
+        "isEmailVerified": { "type": "boolean" },
+        "isOfficial": { "type": "boolean" },
+        "badgeActive": { "type": "boolean" },
+        "badgeExpiry": { "type": "number" },
+        "badgeSource": { "type": "string" },
+        "referralCode": { "type": "string" },
+        "referralCount": { "type": "number" },
+        "referredBy": { "type": "string" },
+        "role": { "type": "string" },
+        "isBanned": { "type": "boolean" },
+        "deviceId": { "type": "string" },
+        "createdAt": { "type": "timestamp" }
+      }
+    },
+    "Username": {
+      "collection": "usernames",
+      "fields": {
+        "userId": { "type": "string" },
+        "registeredAt": { "type": "timestamp" }
+      }
+    },
+    "Post": {
+      "collection": "posts",
+      "fields": {
+        "id": { "type": "string" },
+        "authorId": { "type": "string" },
+        "authorUsername": { "type": "string" },
+        "authorAvatarUrl": { "type": "string" },
+        "authorBadgeActive": { "type": "boolean" },
+        "authorIsOfficial": { "type": "boolean" },
+        "mediaUrls": { "type": "array" },
+        "caption": { "type": "string" },
+        "hashtags": { "type": "array" },
+        "location": { "type": "string" },
+        "likesCount": { "type": "number" },
+        "commentsCount": { "type": "number" },
+        "filterApplied": { "type": "string" },
+        "timestamp": { "type": "timestamp" }
+      }
+    },
+    "Clip": {
+      "collection": "clips",
+      "fields": {
+        "id": { "type": "string" },
+        "authorId": { "type": "string" },
+        "authorUsername": { "type": "string" },
+        "authorAvatarUrl": { "type": "string" },
+        "authorBadgeActive": { "type": "boolean" },
+        "authorIsOfficial": { "type": "boolean" },
+        "mediaUrl": { "type": "string" },
+        "caption": { "type": "string" },
+        "musicTitle": { "type": "string" },
+        "musicArtist": { "type": "string" },
+        "likesCount": { "type": "number" },
+        "commentsCount": { "type": "number" },
+        "sharesCount": { "type": "number" },
+        "timestamp": { "type": "timestamp" }
+      }
+    },
+    "Moment": {
+      "collection": "moments",
+      "fields": {
+        "id": { "type": "string" },
+        "authorId": { "type": "string" },
+        "authorUsername": { "type": "string" },
+        "authorAvatarUrl": { "type": "string" },
+        "authorBadgeActive": { "type": "boolean" },
+        "authorIsOfficial": { "type": "boolean" },
+        "mediaUrl": { "type": "string" },
+        "textOverlay": { "type": "string" },
+        "musicTrack": { "type": "string" },
+        "isCloseFriendsOnly": { "type": "boolean" },
+        "timestamp": { "type": "timestamp" }
+      }
+    },
+    "Chat": {
+      "collection": "chats",
+      "fields": {
+        "id": { "type": "string" },
+        "participantIds": { "type": "array" },
+        "lastMessage": { "type": "string" },
+        "lastMessageTimestamp": { "type": "timestamp" },
+        "updatedAt": { "type": "timestamp" }
+      }
+    },
+    "Notification": {
+      "collection": "notifications",
+      "fields": {
+        "id": { "type": "string" },
+        "recipientId": { "type": "string" },
+        "senderId": { "type": "string" },
+        "senderUsername": { "type": "string" },
+        "senderAvatarUrl": { "type": "string" },
+        "type": { "type": "string" },
+        "contentPreview": { "type": "string" },
+        "timestamp": { "type": "timestamp" },
+        "isRead": { "type": "boolean" }
+      }
+    },
+    "Report": {
+      "collection": "reports",
+      "fields": {
+        "id": { "type": "string" },
+        "targetType": { "type": "string" },
+        "targetId": { "type": "string" },
+        "reportedUsername": { "type": "string" },
+        "reporterId": { "type": "string" },
+        "reporterUsername": { "type": "string" },
+        "reason": { "type": "string" },
+        "details": { "type": "string" },
+        "status": { "type": "string" },
+        "timestamp": { "type": "timestamp" }
+      }
+    }
+  }
+}

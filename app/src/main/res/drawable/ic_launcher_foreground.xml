@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Glass Frame Outer Glow -->
+    <path
+        android:pathData="M33,26 L75,26 A16,16 0 0 1 91,42 L91,66 A16,16 0 0 1 75,82 L33,82 A16,16 0 0 1 17,66 L17,42 A16,16 0 0 1 33,26 Z"
+        android:fillColor="#15FFFFFF"
+        android:strokeWidth="1.5"
+        android:strokeColor="#3300D1FF" />
+
+    <!-- Glass Frame Inner Rim -->
+    <path
+        android:pathData="M35,28 L73,28 A14,14 0 0 1 87,42 L87,66 A14,14 0 0 1 73,80 L35,80 A14,14 0 0 1 21,66 L21,42 A14,14 0 0 1 35,28 Z"
+        android:fillColor="#1A0A0D18"
+        android:strokeWidth="1"
+        android:strokeColor="#25FFFFFF" />
+
+    <!-- Neon Glow Underlayer for 'V' -->
+    <path
+        android:pathData="M36,40 C38,45 42,57 51,70 C53,73 55,73 57,70 C66,57 70,45 72,40 C73,37 70,35 67,37 C64,40 59,51 54,61 C49,51 44,40 41,37 C38,35 35,37 36,40 Z"
+        android:strokeWidth="5"
+        android:strokeColor="#55FF2E93"
+        android:fillColor="#00000000" />
+
+    <!-- Gradient Neon 'V' -->
+    <path
+        android:pathData="M37,39 C39,44 43,56 52,68 C53.5,70 54.5,70 56,68 C65,56 69,44 71,39 C71.8,37 69.5,35.5 67.5,37.2 C64,40.5 58.5,52 54,61 C49.5,52 44,40.5 40.5,37.2 C38.5,35.5 36.2,37 37,39 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="36"
+                android:startY="54"
+                android:endX="72"
+                android:endY="54"
+                android:type="linear">
+                <item android:color="#FFFF2E93" android:offset="0.0" />
+                <item android:color="#FFB338D9" android:offset="0.4" />
+                <item android:color="#FF00D1FF" android:offset="1.0" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Sparkle Star on Upper Right Tip -->
+    <!-- Center of star at (72, 36) -->
+    <path
+        android:pathData="M72,31 L73.2,34.8 L77,36 L73.2,37.2 L72,41 L70.8,37.2 L67,36 L70.8,34.8 Z"
+        android:fillColor="#FFFFFFFF" />
+    <path
+        android:pathData="M72,33.5 L72.7,35.3 L74.5,36 L72.7,36.7 L72,38.5 L71.3,36.7 L69.5,36 L71.3,35.3 Z"
+        android:fillColor="#FFFF99EC" />
+</vector>

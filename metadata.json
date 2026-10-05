@@ -1,0 +1,8 @@
+{
+  "name": "VYNORA",
+  "description": "A modern, neon-themed social platform for sharing clips, moments, and chats with global multilingual support and real-time connectivity.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
