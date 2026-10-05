@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "689756791649",
+    "project_id": "vynora-de737",
+    "storage_bucket": "vynora-de737.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:689756791649:android:25364c6fb4288289f51b20",
+        "android_client_info": {
+          "package_name": "com.aistudio.vynorasocial.wrtkpv"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "689756791649-s9g3jemtngmuf21kmvbv7oskuidpcoio.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAZZXkM-P7uvxup6RDEnma3-D4a3IKwC0s"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "689756791649-s9g3jemtngmuf21kmvbv7oskuidpcoio.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
