@@ -1,6 +1,8 @@
 package com.example
 
 import android.os.Bundle
+import android.app.AlertDialog
+import android.content.Context
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
@@ -40,6 +42,7 @@ import com.example.viewmodel.VynoraViewModel
 open class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        installCrashCatcher()
         try {
             if (FirebaseApp.getApps(this).isEmpty()) {
                 FirebaseApp.initializeApp(this)
@@ -60,6 +63,36 @@ open class MainActivity : ComponentActivity() {
                 }
             }
         }
+        showLastCrashIfAny()
+    }
+
+    // --- Crash catcher: saves the real error so it can be shown on next launch ---
+    private fun installCrashCatcher() {
+        val previous = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+            try {
+                val text = Log.getStackTraceString(throwable)
+                getSharedPreferences("vynora_crash", Context.MODE_PRIVATE)
+                    .edit().putString("last_crash", text).commit()
+            } catch (_: Throwable) { }
+            previous?.uncaughtException(thread, throwable)
+        }
+    }
+
+    private fun showLastCrashIfAny() {
+        try {
+            val prefs = getSharedPreferences("vynora_crash", Context.MODE_PRIVATE)
+            val crash = prefs.getString("last_crash", null) ?: return
+            prefs.edit().remove("last_crash").apply()
+            val lines = crash.lines()
+            val root = lines.lastOrNull { it.startsWith("Caused by:") } ?: lines.firstOrNull().orEmpty()
+            val msg = "ROOT: $root\n\n" + crash.take(2500)
+            AlertDialog.Builder(this)
+                .setTitle("Last crash (screenshot bhejo)")
+                .setMessage(msg)
+                .setPositiveButton("OK", null)
+                .show()
+        } catch (_: Throwable) { }
     }
 }
 
