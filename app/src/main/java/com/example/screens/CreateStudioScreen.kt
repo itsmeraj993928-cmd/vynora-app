@@ -48,9 +48,9 @@ enum class CreateMode {
 fun CreateStudioScreen(
     isDarkMode: Boolean,
     currentLanguage: AppLanguage,
-    onPublishPost: (caption: String, hashtags: List<String>, mediaUrls: List<String>, location: String?, filterName: String?) -> Unit,
-    onPublishMoment: (textOverlay: String, mediaUrl: String, musicTrack: String?, isCloseFriends: Boolean) -> Unit,
-    onPublishClip: (caption: String, mediaUrl: String, musicTitle: String) -> Unit = { _, _, _ -> },
+    onPublishPost: (caption: String, hashtags: List<String>, mediaUrls: List<String>, location: String?, filterName: String?, visibility: String) -> Unit,
+    onPublishMoment: (textOverlay: String, mediaUrl: String, musicTrack: String?, isCloseFriends: Boolean, visibility: String) -> Unit,
+    onPublishClip: (caption: String, mediaUrl: String, musicTitle: String, visibility: String) -> Unit = { _, _, _, _ -> },
     onRequestAiCaption: (topic: String, onResult: (String) -> Unit) -> Unit,
     onRequestAiHashtags: (topic: String, onResult: (List<String>) -> Unit) -> Unit,
     onToast: (String) -> Unit,
@@ -66,6 +66,8 @@ fun CreateStudioScreen(
     var selectedRatio by remember { mutableStateOf("1:1") }
     var isCloseFriends by remember { mutableStateOf(false) }
     var isScheduled by remember { mutableStateOf(false) }
+    var visibility by remember { mutableStateOf("PUBLIC") }
+    var confirmSafeContent by remember { mutableStateOf(false) }
     var isGeneratingAi by remember { mutableStateOf(false) }
     var selectedMusicTrack by remember { mutableStateOf("Cyber Drift - Ambient Wave") }
 
@@ -426,6 +428,56 @@ fun CreateStudioScreen(
             shape = RoundedCornerShape(14.dp)
         )
 
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // --- Who can see this? ---
+        Text(
+            text = "Who can see this?",
+            fontWeight = FontWeight.Bold,
+            fontSize = 13.sp,
+            color = if (isDarkMode) Color.White else Color(0xFF0F172A)
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf(
+                "PUBLIC" to "🌍 Public",
+                "FOLLOWERS" to "👥 Followers",
+                "PRIVATE" to "🔒 Only me"
+            ).forEach { (value, label) ->
+                FilterChip(
+                    selected = visibility == value,
+                    onClick = { visibility = value },
+                    label = { Text(label, fontSize = 12.sp) },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = VynoraNeonCyan,
+                        selectedLabelColor = Color.Black
+                    )
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        // --- Content safety confirmation (no 18+ / nudity) ---
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .clickable { confirmSafeContent = !confirmSafeContent },
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Checkbox(
+                checked = confirmSafeContent,
+                onCheckedChange = { confirmSafeContent = it }
+            )
+            Text(
+                text = "I confirm this has no nudity, sexual (18+), violent or illegal content, and I own the rights to it. Rule-breaking content is removed and accounts can be banned.",
+                fontSize = 11.5.sp,
+                lineHeight = 16.sp,
+                color = if (isDarkMode) Color(0xFFCBD5E1) else Color(0xFF334155)
+            )
+        }
+
         Spacer(modifier = Modifier.height(24.dp))
 
         // --- 5. Publish / Share CTA Button ---
@@ -441,18 +493,25 @@ fun CreateStudioScreen(
                     return@Button
                 }
 
+                if (!confirmSafeContent) {
+                    onToast("Please confirm your content follows the rules (no 18+ / nudity) ✅")
+                    return@Button
+                }
+
                 if (mode == CreateMode.MOMENT) {
                     onPublishMoment(
                         caption.ifBlank { "Late night vibes ✨" },
                         mediaUrl,
                         selectedMusicTrack,
-                        isCloseFriends
+                        isCloseFriends,
+                        visibility
                     )
                 } else if (mode == CreateMode.CLIP) {
                     onPublishClip(
                         caption.ifBlank { "VYNORA Clip ✨" },
                         mediaUrl,
-                        selectedMusicTrack
+                        selectedMusicTrack,
+                        visibility
                     )
                 } else {
                     onPublishPost(
@@ -460,7 +519,8 @@ fun CreateStudioScreen(
                         listOf("#VynoraVibes", "#ShareYourWorld"),
                         listOf(mediaUrl),
                         location.ifBlank { null },
-                        selectedFilter
+                        selectedFilter,
+                        visibility
                     )
                 }
             },
