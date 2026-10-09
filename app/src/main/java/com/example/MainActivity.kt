@@ -101,8 +101,12 @@ fun VynoraApp(viewModel: VynoraViewModel) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
     // Handle Android system back press
+    val hostContext = androidx.compose.ui.platform.LocalContext.current
     BackHandler(enabled = uiState.currentScreen !is ScreenDestination.Splash) {
-        viewModel.navigateBack()
+        // If there is nowhere left to go back to (Home screen), close the app normally
+        if (uiState.currentScreen is ScreenDestination.Auth || !viewModel.navigateBack()) {
+            (hostContext as? android.app.Activity)?.finish()
+        }
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -305,13 +309,32 @@ fun VynoraApp(viewModel: VynoraViewModel) {
                 )
             }
             is ScreenDestination.LiveStudio -> {
-                LiveStudioScreen(
-                    onEndLive = {
-                        viewModel.showToast("Live broadcast ended. Total viewers: 1,420")
-                        viewModel.navigateBack()
-                    },
-                    onToast = { msg -> viewModel.showToast(msg) }
-                )
+                // Live streaming is not available yet: no fake viewers or comments are shown.
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color(0xFF050509))
+                        .padding(32.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Text(
+                        text = "Live is coming soon",
+                        color = Color.White,
+                        fontSize = 22.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text(
+                        text = "Live video is not available yet. We will turn it on in a future update.",
+                        color = Color(0xFF94A3B8),
+                        fontSize = 14.sp
+                    )
+                    Spacer(modifier = Modifier.height(24.dp))
+                    Button(onClick = { viewModel.navigateBack() }) {
+                        Text("Go back")
+                    }
+                }
             }
             is ScreenDestination.CreatorAnalytics -> {
                 CreatorAnalyticsScreen(
