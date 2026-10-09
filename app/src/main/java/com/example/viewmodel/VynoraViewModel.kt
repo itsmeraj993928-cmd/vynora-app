@@ -139,20 +139,35 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    private var followingIds: Set<String> = emptySet()
+
+    private fun isVisibleTo(visibility: String, authorId: String, viewerId: String): Boolean =
+        when (visibility.uppercase()) {
+            "PRIVATE" -> authorId == viewerId
+            "FOLLOWERS" -> authorId == viewerId || authorId in followingIds
+            else -> true
+        }
+
     private fun startDataObservations(userId: String) {
         viewModelScope.launch {
-            repository.observePosts().collect { postsList ->
-                _uiState.update { it.copy(posts = postsList) }
+            followingIds = repository.getFollowingIds(userId)
+            launch {
+                repository.observePosts().collect { postsList ->
+                    val visible = postsList.filter { isVisibleTo(it.visibility, it.author.id, userId) }
+                    _uiState.update { it.copy(posts = visible) }
+                }
             }
-        }
-        viewModelScope.launch {
-            repository.observeClips().collect { clipsList ->
-                _uiState.update { it.copy(clips = clipsList) }
+            launch {
+                repository.observeClips().collect { clipsList ->
+                    val visible = clipsList.filter { isVisibleTo(it.visibility, it.author.id, userId) }
+                    _uiState.update { it.copy(clips = visible) }
+                }
             }
-        }
-        viewModelScope.launch {
-            repository.observeMoments().collect { momentsList ->
-                _uiState.update { it.copy(moments = momentsList) }
+            launch {
+                repository.observeMoments().collect { momentsList ->
+                    val visible = momentsList.filter { isVisibleTo(it.visibility, it.author.id, userId) }
+                    _uiState.update { it.copy(moments = visible) }
+                }
             }
         }
         viewModelScope.launch {
@@ -839,7 +854,7 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     // Moments
-    fun publishMoment(textOverlay: String, mediaUrl: String, musicTrack: String?, isCloseFriends: Boolean) {
+    fun publishMoment(textOverlay: String, mediaUrl: String, musicTrack: String?, isCloseFriends: Boolean, visibility: String = "PUBLIC") {
         val user = _uiState.value.currentUser ?: return
         if (!user.isEmailVerified && !user.isOfficial) {
             showToast("Please verify your email before posting moments.")
@@ -854,7 +869,8 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
             musicTrack = musicTrack,
             timestamp = "Just now",
             isCloseFriendsOnly = isCloseFriends,
-            viewersCount = 0
+            viewersCount = 0,
+            visibility = visibility
         )
         _uiState.update { state ->
             state.copy(moments = listOf(newMoment) + state.moments)
@@ -870,7 +886,8 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
         location: String?,
         filterName: String?,
         cloudinaryPublicId: String = "",
-        cloudinaryResourceType: String = "image"
+        cloudinaryResourceType: String = "image",
+        visibility: String = "PUBLIC"
     ) {
         val user = _uiState.value.currentUser ?: return
 
@@ -886,7 +903,8 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
             isLiked = false,
             filterApplied = filterName,
             cloudinaryPublicId = cloudinaryPublicId,
-            cloudinaryResourceType = cloudinaryResourceType
+            cloudinaryResourceType = cloudinaryResourceType,
+            visibility = visibility
         )
 
         viewModelScope.launch {
@@ -909,7 +927,8 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
         mediaUrl: String,
         musicTitle: String = "Cyber Drift - Ambient Wave",
         musicArtist: String = "VYNORA Audio",
-        cloudinaryPublicId: String = ""
+        cloudinaryPublicId: String = "",
+        visibility: String = "PUBLIC"
     ) {
         val user = _uiState.value.currentUser ?: return
         val newClip = Clip(
@@ -923,7 +942,8 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
             commentsCount = 0,
             sharesCount = 0,
             cloudinaryPublicId = cloudinaryPublicId,
-            createdAt = System.currentTimeMillis()
+            createdAt = System.currentTimeMillis(),
+            visibility = visibility
         )
 
         viewModelScope.launch {
