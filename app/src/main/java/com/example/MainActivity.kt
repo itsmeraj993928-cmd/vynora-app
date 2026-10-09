@@ -193,15 +193,15 @@ fun VynoraApp(viewModel: VynoraViewModel) {
                                     CreateStudioScreen(
                                         isDarkMode = uiState.isDarkMode,
                                         currentLanguage = uiState.currentLanguage,
-                                        onPublishPost = { caption, hashtags, mediaUrls, loc, filter ->
-                                            viewModel.publishPost(caption, hashtags, mediaUrls, loc, filter)
+                                        onPublishPost = { caption, hashtags, mediaUrls, loc, filter, visibility ->
+                                            viewModel.publishPost(caption, hashtags, mediaUrls, loc, filter, visibility = visibility)
                                         },
-                                        onPublishMoment = { textOverlay, mediaUrl, music, isCloseFriends ->
-                                            viewModel.publishMoment(textOverlay, mediaUrl, music, isCloseFriends)
+                                        onPublishMoment = { textOverlay, mediaUrl, music, isCloseFriends, visibility ->
+                                            viewModel.publishMoment(textOverlay, mediaUrl, music, isCloseFriends, visibility)
                                             viewModel.selectTab(MainTab.HOME)
                                         },
-                                        onPublishClip = { caption, mediaUrl, music ->
-                                            viewModel.publishClip(caption, mediaUrl, music)
+                                        onPublishClip = { caption, mediaUrl, music, visibility ->
+                                            viewModel.publishClip(caption, mediaUrl, music, visibility = visibility)
                                         },
                                         onRequestAiCaption = { topic, onResult ->
                                             viewModel.requestAiCaption(topic, onResult)
