@@ -108,6 +108,16 @@ fun AdminPanelScreen(
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             if (selectedTab == 0) {
+                if (reports.isEmpty()) {
+                    item {
+                        Text(
+                            text = "No reports yet. When users report a post or account, it will appear here.",
+                            fontSize = 13.sp,
+                            color = Color.Gray,
+                            modifier = Modifier.padding(vertical = 24.dp)
+                        )
+                    }
+                }
                 items(reports, key = { it.id }) { report ->
                     Card(
                         modifier = Modifier.fillMaxWidth(),
@@ -221,26 +231,18 @@ fun AdminPanelScreen(
                     ) {
                         Column(modifier = Modifier.padding(16.dp)) {
                             Text(
-                                text = "Active Copyright & IPR Takedowns",
+                                text = "Copyright & IPR Takedowns",
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 15.sp,
                                 color = if (isDarkMode) Color.White else Color(0xFF0F172A)
                             )
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
-                                text = "Notice #CR-94812: 'Electric Pulse' Master Track by Kai Sterling.\nStatus: Media hashed & audio muting enforced platform-wide.",
+                                text = "No copyright notices received yet.",
                                 fontSize = 12.sp,
                                 lineHeight = 16.sp,
                                 color = if (isDarkMode) Color(0xFFCBD5E1) else Color(0xFF334155)
                             )
-                            Spacer(modifier = Modifier.height(10.dp))
-                            Button(
-                                onClick = {},
-                                shape = RoundedCornerShape(10.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = VynoraNeonCyan)
-                            ) {
-                                Text("Review Counter-Notice Appeals", fontSize = 12.sp, color = Color.Black, fontWeight = FontWeight.Bold)
-                            }
                         }
                     }
                 }
@@ -253,21 +255,17 @@ fun AdminPanelScreen(
                     ) {
                         Column(modifier = Modifier.padding(16.dp)) {
                             Text(
-                                text = "India DPDP Act 2023 Compliance Status",
+                                text = "Compliance (DPDP)",
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 15.sp,
-                                color = Color(0xFF10B981)
+                                color = if (isDarkMode) Color.White else Color(0xFF0F172A)
                             )
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
-                                text = "• Data Fiduciary: VYNORA Interactive Private Ltd.\n" +
-                                        "• Data Protection Officer (DPO): dpo@vynora.io\n" +
-                                        "• Consent Architecture: Granular opt-in for algorithmic suggestions\n" +
-                                        "• Data Erasure SLA: Requests handled within 72 hours\n" +
-                                        "• Minor Protection: Explicit 13+ age gate and parental notice active.",
+                                text = "Company name, Data Protection Officer contact and data-erasure process are not set up yet. Add them here once they are real.",
                                 fontSize = 12.sp,
-                                lineHeight = 20.sp,
-                                color = if (isDarkMode) Color.White else Color(0xFF0F172A)
+                                lineHeight = 18.sp,
+                                color = if (isDarkMode) Color(0xFFCBD5E1) else Color(0xFF334155)
                             )
                         }
                     }
