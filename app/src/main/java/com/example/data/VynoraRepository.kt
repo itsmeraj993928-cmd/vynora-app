@@ -575,6 +575,16 @@ class VynoraRepository(
         ).await()
     }
 
+    suspend fun getFollowingIds(userId: String): Set<String> {
+        return try {
+            db.collection("follows").whereEqualTo("followerId", userId).get().await()
+                .documents.mapNotNull { it.getString("followedId") }.toSet()
+        } catch (e: Exception) {
+            Log.e("VynoraRepository", "Error loading following list: ${e.message}", e)
+            emptySet()
+        }
+    }
+
     suspend fun savePost(post: Post) {
         try {
             db.collection("posts").document(post.id).set(post).await()
