@@ -108,8 +108,35 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
             billingService = null
         }
 
-        // App starts directly on the Sign In screen right away
-        _uiState.update { it.copy(currentScreen = ScreenDestination.Auth, isLoggedIn = false, currentUser = null) }
+        // Keep the user logged in: if Firebase already has a signed-in user, restore the session
+        val existingUser = try { auth.currentUser } catch (e: Exception) { null }
+        if (existingUser == null) {
+            _uiState.update { it.copy(currentScreen = ScreenDestination.Auth, isLoggedIn = false, currentUser = null) }
+        } else {
+            _uiState.update { it.copy(currentScreen = ScreenDestination.Splash) }
+            viewModelScope.launch {
+                try {
+                    val profile = withTimeoutOrNull(15000L) {
+                        repository.getUserProfile(existingUser.uid)
+                            ?: repository.ensureUserProfile(existingUser, _uiState.value.deviceId)
+                    }
+                    if (profile != null) {
+                        _uiState.update {
+                            it.copy(
+                                isLoggedIn = true,
+                                currentUser = profile,
+                                currentScreen = ScreenDestination.Main(MainTab.HOME)
+                            )
+                        }
+                        startDataObservations(existingUser.uid)
+                    } else {
+                        _uiState.update { it.copy(currentScreen = ScreenDestination.Auth, isLoggedIn = false, currentUser = null) }
+                    }
+                } catch (e: Exception) {
+                    _uiState.update { it.copy(currentScreen = ScreenDestination.Auth, isLoggedIn = false, currentUser = null) }
+                }
+            }
+        }
     }
 
     private fun startDataObservations(userId: String) {
