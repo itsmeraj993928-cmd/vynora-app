@@ -121,7 +121,8 @@ data class Post(
     val isVideo: Boolean = false,
     val audioTrack: String? = null,
     val cloudinaryPublicId: String = "",
-    val cloudinaryResourceType: String = "image"
+    val cloudinaryResourceType: String = "image",
+    val visibility: String = "PUBLIC" // PUBLIC, FOLLOWERS, PRIVATE
 )
 
 data class Moment(
@@ -136,7 +137,8 @@ data class Moment(
     val isViewed: Boolean = false,
     val isCloseFriendsOnly: Boolean = false,
     val viewersCount: Int = 0,
-    val viewers: List<User> = emptyList()
+    val viewers: List<User> = emptyList(),
+    val visibility: String = "PUBLIC" // PUBLIC, FOLLOWERS, PRIVATE
 )
 
 data class Clip(
@@ -154,7 +156,8 @@ data class Clip(
     val isSaved: Boolean = false,
     val isFollowing: Boolean = false,
     val createdAt: Long = System.currentTimeMillis(),
-    val cloudinaryPublicId: String = ""
+    val cloudinaryPublicId: String = "",
+    val visibility: String = "PUBLIC" // PUBLIC, FOLLOWERS, PRIVATE
 )
 
 data class ChatMessage(
