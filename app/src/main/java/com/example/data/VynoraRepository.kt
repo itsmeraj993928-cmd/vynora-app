@@ -18,6 +18,8 @@ import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.tasks.await
 import java.util.UUID
 
+private const val MAX_ACCOUNTS_PER_PHONE = 5
+
 class VynoraRepository(
     private val context: Context,
     private val db: FirebaseFirestore = run {
@@ -116,12 +118,18 @@ class VynoraRepository(
             if (!doc.exists()) {
                 true
             } else {
-                val ownerId = doc.getString("userId")
-                currentUserId != null && ownerId == currentUserId
+                val ids = phoneOwnerIds(doc)
+                (currentUserId != null && ids.contains(currentUserId)) || ids.size < MAX_ACCOUNTS_PER_PHONE
             }
         } catch (e: Exception) {
             true
         }
+    }
+
+    private fun phoneOwnerIds(doc: com.google.firebase.firestore.DocumentSnapshot): List<String> {
+        val list = (doc.get("userIds") as? List<*>)?.filterIsInstance<String>() ?: emptyList()
+        val single = doc.getString("userId")
+        return if (single != null && !list.contains(single)) list + single else list
     }
 
     suspend fun isPhoneAvailable(phone: String, currentUserId: String? = null): Boolean {
@@ -171,8 +179,11 @@ class VynoraRepository(
         // 3. Phone Uniqueness check (if provided)
         if (cleanPhone.isNotBlank()) {
             val phoneDoc = db.collection("phones").document(cleanPhone).get().await()
-            if (phoneDoc.exists() && phoneDoc.getString("userId") != uid) {
-                return Result.failure(IllegalArgumentException("Mobile number is already registered to another account."))
+            if (phoneDoc.exists()) {
+                val ids = phoneOwnerIds(phoneDoc)
+                if (!ids.contains(uid) && ids.size >= MAX_ACCOUNTS_PER_PHONE) {
+                    return Result.failure(IllegalArgumentException("Is mobile number se maximum $MAX_ACCOUNTS_PER_PHONE accounts ban sakte hain."))
+                }
             }
         }
 
@@ -223,7 +234,12 @@ class VynoraRepository(
         if (cleanPhone.isNotBlank()) {
             try {
                 db.collection("phones").document(cleanPhone).set(
-                    mapOf("userId" to uid, "registeredAt" to FieldValue.serverTimestamp())
+                    mapOf(
+                        "userId" to uid,
+                        "userIds" to FieldValue.arrayUnion(uid),
+                        "registeredAt" to FieldValue.serverTimestamp()
+                    ),
+                    com.google.firebase.firestore.SetOptions.merge()
                 ).await()
             } catch (_: Exception) {}
         }
@@ -705,8 +721,11 @@ class VynoraRepository(
         val isPhoneChanged = oldUser != null && oldUser.phone.filter { it.isDigit() || it == '+' } != cleanPhone
         if (isPhoneChanged && cleanPhone.isNotBlank()) {
             val phoneDoc = db.collection("phones").document(cleanPhone).get().await()
-            if (phoneDoc.exists() && phoneDoc.getString("userId") != uid) {
-                return Result.failure(IllegalArgumentException("Mobile number is already registered to another account."))
+            if (phoneDoc.exists()) {
+                val ids = phoneOwnerIds(phoneDoc)
+                if (!ids.contains(uid) && ids.size >= MAX_ACCOUNTS_PER_PHONE) {
+                    return Result.failure(IllegalArgumentException("Is mobile number se maximum $MAX_ACCOUNTS_PER_PHONE accounts ban sakte hain."))
+                }
             }
         }
 
@@ -741,11 +760,16 @@ class VynoraRepository(
             if (isPhoneChanged) {
                 val oldCleanPhone = oldUser!!.phone.filter { it.isDigit() || it == '+' }
                 if (oldCleanPhone.isNotBlank()) {
-                    try { db.collection("phones").document(oldCleanPhone).delete().await() } catch (_: Exception) {}
+                    try { db.collection("phones").document(oldCleanPhone).update("userIds", FieldValue.arrayRemove(uid)).await() } catch (_: Exception) {}
                 }
                 if (cleanPhone.isNotBlank()) {
                     db.collection("phones").document(cleanPhone).set(
-                        mapOf("userId" to uid, "registeredAt" to FieldValue.serverTimestamp())
+                        mapOf(
+                            "userId" to uid,
+                            "userIds" to FieldValue.arrayUnion(uid),
+                            "registeredAt" to FieldValue.serverTimestamp()
+                        ),
+                        com.google.firebase.firestore.SetOptions.merge()
                     ).await()
                 }
             }
