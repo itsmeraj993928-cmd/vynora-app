@@ -627,10 +627,27 @@ class VynoraRepository(
         }
     }
 
-    suspend fun deletePost(postId: String) {
+    suspend fun deletePost(postId: String, authorId: String = "") {
         try {
             db.collection("posts").document(postId).delete().await()
-        } catch (ignored: Exception) {}
+            if (authorId.isNotBlank()) {
+                try {
+                    db.collection("users").document(authorId).update(
+                        "postsCount", FieldValue.increment(-1)
+                    ).await()
+                } catch (ignored: Exception) {}
+            }
+        } catch (e: Exception) {
+            Log.e("VynoraRepository", "Error deleting post: ${e.message}", e)
+        }
+    }
+
+    suspend fun deleteClip(clipId: String) {
+        try {
+            db.collection("clips").document(clipId).delete().await()
+        } catch (e: Exception) {
+            Log.e("VynoraRepository", "Error deleting clip: ${e.message}", e)
+        }
     }
 
     suspend fun promoteToOfficialAccount(email: String): Result<Boolean> {
