@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.example.components.VynoraPlusBadge
+import com.example.components.StoryRingAvatar
 import com.example.i18n.AppLanguage
 import com.example.i18n.VynoraStrings
 import com.example.model.User
@@ -196,35 +197,26 @@ fun EditProfileScreen(
         }
     }
 
-    // Media Pickers with Cloudinary Upload
+    // Media Pickers: photo is compressed on the phone and stored with the profile (no Cloudinary needed)
+    fun applyPhoto(compressed: String?) {
+        if (compressed.isNullOrBlank()) {
+            photoUploadError = "Photo load nahi hui, dobara try karo"
+            onToast("Photo load nahi hui, dobara try karo")
+            return
+        }
+        val raw = if (compressed.contains("base64,")) compressed.substringAfter("base64,") else compressed
+        photoUploadError = null
+        photoBase64 = raw
+        avatarUrl = "data:image/jpeg;base64,$raw"
+        viewModel.updateUserAvatar(avatarUrl)
+        onToast("Photo set ho gayi ✓")
+    }
+
     val galleryLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri: Uri? ->
         if (uri != null) {
-            lastPhotoUri = uri
-            lastPhotoBitmap = null
-            photoUploadError = null
-            photoUploadProgress = 0
-            isUploadingPhoto = true
-            coroutineScope.launch {
-                val res = CloudinaryUploader.uploadUri(
-                    context = context,
-                    uri = uri,
-                    onProgress = { p -> photoUploadProgress = p }
-                )
-                isUploadingPhoto = false
-                if (res.isSuccess) {
-                    val result = res.getOrNull()
-                    if (result != null) {
-                        avatarUrl = result.secureUrl
-                        viewModel.updateUserAvatar(result.secureUrl)
-                        onToast("Photo uploaded to Cloudinary! ☁️")
-                    }
-                } else {
-                    photoUploadError = res.exceptionOrNull()?.localizedMessage ?: "Upload failed"
-                    onToast("Upload failed: $photoUploadError")
-                }
-            }
+            applyPhoto(ImageCompressUtil.uriToCompressedBase64(context, uri, 400))
         }
     }
 
@@ -232,29 +224,7 @@ fun EditProfileScreen(
         contract = ActivityResultContracts.TakePicturePreview()
     ) { bitmap: Bitmap? ->
         if (bitmap != null) {
-            lastPhotoBitmap = bitmap
-            lastPhotoUri = null
-            photoUploadError = null
-            photoUploadProgress = 0
-            isUploadingPhoto = true
-            coroutineScope.launch {
-                val res = CloudinaryUploader.uploadBitmap(
-                    bitmap = bitmap,
-                    onProgress = { p -> photoUploadProgress = p }
-                )
-                isUploadingPhoto = false
-                if (res.isSuccess) {
-                    val result = res.getOrNull()
-                    if (result != null) {
-                        avatarUrl = result.secureUrl
-                        viewModel.updateUserAvatar(result.secureUrl)
-                        onToast("Photo uploaded to Cloudinary! ☁️")
-                    }
-                } else {
-                    photoUploadError = res.exceptionOrNull()?.localizedMessage ?: "Upload failed"
-                    onToast("Upload failed: $photoUploadError")
-                }
-            }
+            applyPhoto(ImageCompressUtil.bitmapToCompressedBase64(bitmap, 400))
         }
     }
 
@@ -408,21 +378,12 @@ fun EditProfileScreen(
                             .testTag("edit_profile_avatar"),
                         contentAlignment = Alignment.Center
                     ) {
-                        if (avatarUrl.isNotBlank()) {
-                            AsyncImage(
-                                model = avatarUrl,
-                                contentDescription = "Profile Photo",
-                                modifier = Modifier.fillMaxSize(),
-                                contentScale = ContentScale.Crop
-                            )
-                        } else {
-                            Icon(
-                                imageVector = Icons.Outlined.Person,
-                                contentDescription = null,
-                                tint = VynoraNeonCyan,
-                                modifier = Modifier.size(48.dp)
-                            )
-                        }
+                        StoryRingAvatar(
+                            avatarUrl = avatarUrl,
+                            hasStory = false,
+                            size = 92.dp,
+                            onClick = { showPhotoOptionsDialog = true }
+                        )
                     }
 
                     Spacer(modifier = Modifier.height(12.dp))
