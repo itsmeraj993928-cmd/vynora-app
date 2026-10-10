@@ -1,5 +1,7 @@
 package com.example.screens
 
+import android.net.Uri
+import android.widget.VideoView
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -27,7 +29,8 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import coil.compose.AsyncImage
+import androidx.compose.ui.viewinterop.AndroidView
+import com.example.components.StoryRingAvatar
 import com.example.components.VynoraOfficialBadge
 import com.example.components.VynoraPlusBadge
 import com.example.model.Clip
@@ -44,7 +47,9 @@ fun ClipsScreen(
     onCommentsClick: (String) -> Unit,
     onShareClick: (Clip) -> Unit,
     onToast: (String) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    currentUserId: String = "",
+    onDeleteClip: (String) -> Unit = {}
 ) {
     val pagerState = rememberPagerState(pageCount = { clips.size })
     var isMuted by remember { mutableStateOf(false) }
@@ -99,7 +104,10 @@ fun ClipsScreen(
                     onSaveToggle = { onSaveToggle(clip.id) },
                     onFollowToggle = { onFollowToggle(clip.author.username) },
                     onCommentsClick = { onCommentsClick(clip.id) },
-                    onShareClick = { onShareClick(clip) }
+                    onShareClick = { onShareClick(clip) },
+                    isCurrentPage = pagerState.currentPage == page,
+                    isOwner = currentUserId.isNotBlank() && clip.author.id == currentUserId,
+                    onDelete = { onDeleteClip(clip.id) }
                 )
             }
         }
@@ -151,9 +159,30 @@ private fun ClipItemView(
     onSaveToggle: () -> Unit,
     onFollowToggle: () -> Unit,
     onCommentsClick: () -> Unit,
-    onShareClick: () -> Unit
+    onShareClick: () -> Unit,
+    isCurrentPage: Boolean,
+    isOwner: Boolean,
+    onDelete: () -> Unit
 ) {
     var isPlaying by remember { mutableStateOf(true) }
+    var showDeleteConfirm by remember { mutableStateOf(false) }
+
+    if (showDeleteConfirm) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirm = false },
+            title = { Text("Delete this clip?") },
+            text = { Text("This will remove your clip for everyone. This cannot be undone.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showDeleteConfirm = false
+                    onDelete()
+                }) { Text("Delete", color = Color(0xFFEF4444), fontWeight = FontWeight.Bold) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirm = false }) { Text("Cancel") }
+            }
+        )
+    }
 
     // Vinyl spinning rotation
     val infiniteTransition = rememberInfiniteTransition(label = "vinyl_spin")
@@ -175,12 +204,12 @@ private fun ClipItemView(
                 )
             }
     ) {
-        // Media Image / Simulated Video
-        AsyncImage(
-            model = clip.mediaUrl,
-            contentDescription = "Clip Media",
-            modifier = Modifier.fillMaxSize(),
-            contentScale = ContentScale.Crop
+        // Real video player
+        ClipVideoPlayer(
+            url = clip.mediaUrl,
+            shouldPlay = isPlaying && isCurrentPage,
+            isMuted = isMuted,
+            modifier = Modifier.fillMaxSize()
         )
 
         // Gradient shadows for text readability
@@ -238,10 +267,9 @@ private fun ClipItemView(
                         .clip(CircleShape)
                         .border(1.5.dp, Color.White, CircleShape)
                 ) {
-                    AsyncImage(
-                        model = clip.author.avatarUrl,
-                        contentDescription = clip.author.username,
-                        modifier = Modifier.fillMaxSize()
+                    StoryRingAvatar(
+                        avatarUrl = clip.author.avatarUrl,
+                        size = 46.dp
                     )
                 }
 
@@ -298,6 +326,16 @@ private fun ClipItemView(
                 onClick = onShareClick
             )
 
+            // Delete (only for the creator of this clip)
+            if (isOwner) {
+                ActionIconWithCount(
+                    icon = Icons.Outlined.Delete,
+                    count = "Delete",
+                    tint = Color(0xFFEF4444),
+                    onClick = { showDeleteConfirm = true }
+                )
+            }
+
             // Rotating Vinyl Disc
             Box(
                 modifier = Modifier
@@ -313,10 +351,9 @@ private fun ClipItemView(
                         .size(18.dp)
                         .clip(CircleShape)
                 ) {
-                    AsyncImage(
-                        model = clip.author.avatarUrl,
-                        contentDescription = null,
-                        modifier = Modifier.fillMaxSize()
+                    StoryRingAvatar(
+                        avatarUrl = clip.author.avatarUrl,
+                        size = 18.dp
                     )
                 }
             }
@@ -421,5 +458,71 @@ private fun ActionIconWithCount(
             fontWeight = FontWeight.SemiBold,
             color = Color.White
         )
+    }
+}
+
+// Cloudinary can deliver any uploaded video as H.264 MP4, which every Android phone can play.
+private fun toPlayableVideoUrl(url: String): String {
+    if (!url.contains("res.cloudinary.com") || !url.contains("/video/upload/")) return url
+    if (url.contains("/upload/f_mp4")) return url
+    val lastSlash = url.lastIndexOf('/')
+    val lastDot = url.lastIndexOf('.')
+    val withMp4Ext = if (lastDot > lastSlash) url.substring(0, lastDot) + ".mp4" else "$url.mp4"
+    return withMp4Ext.replaceFirst("/upload/", "/upload/f_mp4,vc_h264,ac_aac/")
+}
+
+@Composable
+private fun ClipVideoPlayer(
+    url: String,
+    shouldPlay: Boolean,
+    isMuted: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val videoUrl = remember(url) { toPlayableVideoUrl(url) }
+    var hasError by remember(videoUrl) { mutableStateOf(false) }
+    var isReady by remember(videoUrl) { mutableStateOf(false) }
+    var player by remember(videoUrl) { mutableStateOf<android.media.MediaPlayer?>(null) }
+
+    Box(modifier = modifier.background(Color.Black), contentAlignment = Alignment.Center) {
+        AndroidView(
+            modifier = Modifier.fillMaxSize(),
+            factory = { ctx ->
+                VideoView(ctx).apply {
+                    setOnPreparedListener { mp ->
+                        mp.isLooping = true
+                        player = mp
+                        isReady = true
+                    }
+                    setOnErrorListener { _, _, _ ->
+                        hasError = true
+                        true
+                    }
+                    setVideoURI(Uri.parse(videoUrl))
+                }
+            },
+            update = { vv ->
+                val volume = if (isMuted) 0f else 1f
+                player?.let {
+                    try { it.setVolume(volume, volume) } catch (_: Throwable) { }
+                }
+                if (shouldPlay) {
+                    if (!vv.isPlaying) vv.start()
+                } else {
+                    if (vv.isPlaying) vv.pause()
+                }
+            },
+            onRelease = { vv ->
+                try { vv.stopPlayback() } catch (_: Throwable) { }
+            }
+        )
+        if (hasError) {
+            Text(
+                text = "Video could not be loaded",
+                color = Color.White,
+                fontSize = 13.sp
+            )
+        } else if (!isReady) {
+            CircularProgressIndicator(color = VynoraNeonCyan, modifier = Modifier.size(32.dp))
+        }
     }
 }

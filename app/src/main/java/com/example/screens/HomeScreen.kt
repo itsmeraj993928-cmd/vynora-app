@@ -13,6 +13,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Videocam
@@ -59,8 +60,27 @@ fun HomeScreen(
     onShareClick: (Post) -> Unit,
     onReportClick: (type: String, id: String, username: String) -> Unit,
     onAuthorClick: (String) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onDeletePost: (String) -> Unit = {}
 ) {
+    var postToDelete by remember { mutableStateOf<String?>(null) }
+    if (postToDelete != null) {
+        AlertDialog(
+            onDismissRequest = { postToDelete = null },
+            title = { Text("Delete this post?") },
+            text = { Text("This will remove your post for everyone. This cannot be undone.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    postToDelete?.let { onDeletePost(it) }
+                    postToDelete = null
+                }) { Text("Delete", color = Color(0xFFEF4444), fontWeight = FontWeight.Bold) }
+            },
+            dismissButton = {
+                TextButton(onClick = { postToDelete = null }) { Text("Cancel") }
+            }
+        )
+    }
+
     val screenBg = if (isDarkMode) Color(0xFF050509) else Color(0xFFF8FAFC)
 
     Scaffold(
@@ -199,18 +219,37 @@ fun HomeScreen(
                 }
             } else {
                 items(posts, key = { it.id }) { post ->
-                    PostCard(
-                        post = post,
-                        isDarkMode = isDarkMode,
-                        currentLanguage = currentLanguage,
-                        onLikeToggle = { onLikeToggle(post.id) },
-                        onSaveToggle = { onSaveToggle(post.id) },
-                        onCommentsClick = { onCommentsClick(post.id) },
-                        onShareClick = { onShareClick(post) },
-                        onReportClick = { onReportClick("Post", post.id, post.author.username) },
-                        onAuthorClick = { onAuthorClick(post.author.username) },
-                        modifier = Modifier.padding(horizontal = 14.dp)
-                    )
+                    Column {
+                        PostCard(
+                            post = post,
+                            isDarkMode = isDarkMode,
+                            currentLanguage = currentLanguage,
+                            onLikeToggle = { onLikeToggle(post.id) },
+                            onSaveToggle = { onSaveToggle(post.id) },
+                            onCommentsClick = { onCommentsClick(post.id) },
+                            onShareClick = { onShareClick(post) },
+                            onReportClick = { onReportClick("Post", post.id, post.author.username) },
+                            onAuthorClick = { onAuthorClick(post.author.username) },
+                            modifier = Modifier.padding(horizontal = 14.dp)
+                        )
+                        if (currentUser.id.isNotBlank() && post.author.id == currentUser.id) {
+                            TextButton(
+                                onClick = { postToDelete = post.id },
+                                modifier = Modifier
+                                    .align(Alignment.End)
+                                    .padding(horizontal = 14.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.Delete,
+                                    contentDescription = null,
+                                    tint = Color(0xFFEF4444),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Delete my post", color = Color(0xFFEF4444), fontSize = 12.sp)
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -344,10 +383,10 @@ private fun MomentsBar(
                         contentAlignment = Alignment.Center
                     ) {
                         if (currentUser.avatarUrl.isNotBlank()) {
-                            AsyncImage(
-                                model = currentUser.avatarUrl,
-                                contentDescription = "My Avatar",
-                                modifier = Modifier.fillMaxSize()
+                            StoryRingAvatar(
+                                avatarUrl = currentUser.avatarUrl,
+                                size = 62.dp,
+                                onClick = onCreateMoment
                             )
                         } else {
                             Icon(
