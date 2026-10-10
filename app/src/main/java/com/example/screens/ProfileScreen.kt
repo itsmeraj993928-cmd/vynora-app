@@ -191,7 +191,8 @@ fun ProfileScreen(
                         StoryRingAvatar(
                             avatarUrl = user.avatarUrl,
                             hasStory = false,
-                            size = 80.dp
+                            size = 80.dp,
+                            onClick = { if (user.avatarUrl.isBlank()) onOpenEditProfile() }
                         )
 
                         // Stats (Posts, Followers, Following)
@@ -531,7 +532,7 @@ fun ProfileScreen(
                 val displayList = when (selectedTab) {
                     1 -> clips.map { it.mediaUrl }
                     2 -> savedPosts.map { it.mediaUrls.firstOrNull() ?: "" }
-                    else -> posts.map { it.mediaUrls.firstOrNull() ?: "" }
+                    else -> userPosts.map { it.mediaUrls.firstOrNull() ?: "" }
                 }
 
                 if (displayList.isEmpty()) {
