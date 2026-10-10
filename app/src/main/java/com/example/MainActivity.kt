@@ -176,6 +176,7 @@ fun VynoraApp(viewModel: VynoraViewModel) {
                                         onOpenNotifications = { viewModel.navigateTo(ScreenDestination.Notifications) },
                                         onOpenChats = { viewModel.navigateTo(ScreenDestination.ChatsList) },
                                         onGoLiveClick = { viewModel.navigateTo(ScreenDestination.LiveStudio) },
+                                        onDeletePost = { postId -> viewModel.deleteMyPost(postId) },
                                         onLikeToggle = { postId -> viewModel.toggleLikePost(postId) },
                                         onSaveToggle = { postId -> viewModel.toggleSavePost(postId) },
                                         onCommentsClick = { postId -> viewModel.openComments(postId) },
@@ -218,6 +219,8 @@ fun VynoraApp(viewModel: VynoraViewModel) {
                                 }
                                 MainTab.CLIPS -> {
                                     ClipsScreen(
+                                        currentUserId = uiState.currentUser?.id ?: "",
+                                        onDeleteClip = { clipId -> viewModel.deleteMyClip(clipId) },
                                         clips = uiState.clips,
                                         onLikeToggle = { clipId -> viewModel.toggleLikeClip(clipId) },
                                         onSaveToggle = { clipId -> viewModel.toggleSaveClip(clipId) },
