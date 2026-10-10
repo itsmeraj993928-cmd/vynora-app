@@ -1150,6 +1150,24 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
         showToast("Report marked as $action")
     }
 
+    fun deleteMyPost(postId: String) {
+        val user = _uiState.value.currentUser ?: return
+        val post = _uiState.value.posts.firstOrNull { it.id == postId } ?: return
+        if (post.author.id != user.id && user.role != "ADMIN") return
+        _uiState.update { state -> state.copy(posts = state.posts.filterNot { it.id == postId }) }
+        viewModelScope.launch { repository.deletePost(postId, post.author.id) }
+        showToast("Post deleted")
+    }
+
+    fun deleteMyClip(clipId: String) {
+        val user = _uiState.value.currentUser ?: return
+        val clip = _uiState.value.clips.firstOrNull { it.id == clipId } ?: return
+        if (clip.author.id != user.id && user.role != "ADMIN") return
+        _uiState.update { state -> state.copy(clips = state.clips.filterNot { it.id == clipId }) }
+        viewModelScope.launch { repository.deleteClip(clipId) }
+        showToast("Clip deleted")
+    }
+
     fun removePostAsAdmin(postId: String) {
         viewModelScope.launch {
             repository.deletePost(postId)
