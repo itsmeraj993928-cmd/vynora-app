@@ -76,7 +76,15 @@ fun AuthScreen(
     var isSigningIn by remember { mutableStateOf(false) }
     var isProfileSetupMode by remember { mutableStateOf(false) }
     var isSignUpTab by remember { mutableStateOf(false) } // Default to Sign In tab so app launches directly on Sign In!
-    var signUpStep by remember { mutableStateOf(1) } // 1..5
+    var signUpStep by remember { mutableStateOf(1) } // 1..2
+    var signUpWithPhone by remember { mutableStateOf(false) }
+    fun toAuthEmail(input: String): String {
+        val t = input.trim()
+        if (t.contains("@")) return t
+        var d = t.filter { it.isDigit() }
+        if (d.length == 10) d = "91$d"
+        return "$d@phone.vynora.app"
+    }
 
     // --- Sign In & Step 1 Fields ---
     var email by remember { mutableStateOf("") }
@@ -403,11 +411,11 @@ fun AuthScreen(
                         OutlinedTextField(
                             value = email,
                             onValueChange = { email = it; errorMessage = null },
-                            label = { Text("Email Address") },
+                            label = { Text("Email or Mobile number") },
                             leadingIcon = {
                                 Icon(Icons.Outlined.Email, contentDescription = null, tint = VynoraNeonCyan)
                             },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth().testTag("email_input"),
                             shape = RoundedCornerShape(14.dp),
@@ -492,7 +500,7 @@ fun AuthScreen(
                                 isSigningIn = true
                                 errorMessage = null
                                 viewModel.signInWithEmail(
-                                    email = email,
+                                    email = toAuthEmail(email),
                                     pass = password,
                                     onSuccess = {
                                         isSigningIn = false
@@ -563,7 +571,7 @@ fun AuthScreen(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = VynoraStrings.stepIndicator(signUpStep, 5, currentLanguage),
+                                    text = VynoraStrings.stepIndicator(signUpStep, 2, currentLanguage),
                                     color = VynoraNeonCyan,
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.ExtraBold
@@ -589,7 +597,7 @@ fun AuthScreen(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(4.dp)
                             ) {
-                                (1..5).forEach { stepIndex ->
+                                (1..2).forEach { stepIndex ->
                                     Box(
                                         modifier = Modifier
                                             .weight(1f)
@@ -607,21 +615,36 @@ fun AuthScreen(
 
                         // STEP 1: EMAIL & PASSWORDS
                         if (signUpStep == 1) {
-                            OutlinedTextField(
-                                value = email,
-                                onValueChange = { email = it; errorMessage = null },
-                                label = { Text("Email Address") },
-                                leadingIcon = { Icon(Icons.Outlined.Email, contentDescription = null, tint = VynoraNeonCyan) },
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
-                                singleLine = true,
-                                modifier = Modifier.fillMaxWidth().testTag("signup_email_input"),
-                                shape = RoundedCornerShape(14.dp),
-                                colors = OutlinedTextFieldDefaults.colors(
-                                    focusedBorderColor = VynoraNeonCyan,
-                                    focusedContainerColor = Color(0xFF131726),
-                                    unfocusedContainerColor = Color(0xFF131726)
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                FilterChip(selected = !signUpWithPhone, onClick = { signUpWithPhone = false; errorMessage = null }, label = { Text("Email") })
+                                FilterChip(selected = signUpWithPhone, onClick = { signUpWithPhone = true; errorMessage = null }, label = { Text("Mobile number") })
+                            }
+                            Spacer(modifier = Modifier.height(8.dp))
+                            if (!signUpWithPhone) {
+                                OutlinedTextField(
+                                    value = email,
+                                    onValueChange = { email = it; errorMessage = null },
+                                    label = { Text("Email Address") },
+                                    leadingIcon = { Icon(Icons.Outlined.Email, contentDescription = null, tint = VynoraNeonCyan) },
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth().testTag("signup_email_input"),
+                                    shape = RoundedCornerShape(14.dp)
                                 )
-                            )
+                            } else {
+                                OutlinedTextField(
+                                    value = mobileNumber,
+                                    onValueChange = { v -> if (v.length <= 10 && v.all { c -> c.isDigit() }) { mobileNumber = v; selectedCountryCode = "+91" }; errorMessage = null },
+                                    label = { Text("Mobile number (India)") },
+                                    prefix = { Text("+91 ") },
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                                    singleLine = true,
+                                    isError = phoneStatus == AvailabilityStatus.TAKEN,
+                                    supportingText = { if (phoneStatus == AvailabilityStatus.TAKEN) Text("Ye number pehle se registered hai") },
+                                    modifier = Modifier.fillMaxWidth().testTag("signup_phone_input"),
+                                    shape = RoundedCornerShape(14.dp)
+                                )
+                            }
 
                             Spacer(modifier = Modifier.height(10.dp))
 
@@ -676,7 +699,8 @@ fun AuthScreen(
 
                             Spacer(modifier = Modifier.height(10.dp))
 
-                            // Confirm Password
+                            if (false) {
+// Confirm Password
                             val isMismatch = confirmPassword.isNotEmpty() && password != confirmPassword
                             OutlinedTextField(
                                 value = confirmPassword,
@@ -723,9 +747,11 @@ fun AuthScreen(
                                 )
                             }
                         }
+}
 
                         // STEP 2: PROFILE DETAILS (NAME, USERNAME, DOB, GENDER)
-                        if (signUpStep == 2) {
+                        if (signUpStep == 1) {
+                            Spacer(modifier = Modifier.height(10.dp))
                             OutlinedTextField(
                                 value = fullName,
                                 onValueChange = { fullName = it; errorMessage = null },
@@ -780,6 +806,8 @@ fun AuthScreen(
                                 Text(VynoraStrings.usernameTaken(currentLanguage), color = Color(0xFFEF4444), fontSize = 11.sp, modifier = Modifier.padding(start = 4.dp, top = 2.dp))
                             }
 
+                        }
+                        if (signUpStep == 2) {
                             Spacer(modifier = Modifier.height(10.dp))
 
                             // Date of Birth (DD / MM / YYYY - 18+ only)
@@ -843,7 +871,8 @@ fun AuthScreen(
                                 }
                             }
 
-                            Spacer(modifier = Modifier.height(10.dp))
+                            if (false) {
+Spacer(modifier = Modifier.height(10.dp))
 
                             // Gender Dropdown
                             Box(modifier = Modifier.fillMaxWidth()) {
@@ -887,9 +916,10 @@ fun AuthScreen(
                                 }
                             }
                         }
+}
 
                         // STEP 3: MOBILE NUMBER WITH COUNTRY CODE & OPTIONAL OTP
-                        if (signUpStep == 3) {
+                        if (signUpStep == 30) {
                             Column(modifier = Modifier.fillMaxWidth()) {
                                 Text(
                                     text = VynoraStrings.mobileNumberLabel(currentLanguage),
@@ -1066,7 +1096,7 @@ fun AuthScreen(
                         }
 
                         // STEP 4: MANDATORY PROFILE PHOTO (CROP TO CIRCLE, COMPRESS MAX 400x400 BASE64)
-                        if (signUpStep == 4) {
+                        if (signUpStep == 40) {
                             Column(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalAlignment = Alignment.CenterHorizontally
@@ -1164,7 +1194,7 @@ fun AuthScreen(
                         }
 
                         // STEP 5: TERMS OF SERVICE, PRIVACY POLICY & AGE VERIFICATION
-                        if (signUpStep == 5) {
+                        if (signUpStep == 2) {
                             Column(modifier = Modifier.fillMaxWidth()) {
                                 // Profile Summary Card
                                 Surface(
@@ -1193,7 +1223,7 @@ fun AuthScreen(
                                         Column {
                                             Text(fullName, fontWeight = FontWeight.Bold, color = Color.White, fontSize = 14.sp)
                                             Text("@$username", color = VynoraNeonCyan, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                                            Text(email, color = Color(0xFF94A3B8), fontSize = 11.sp)
+                                            Text(if (signUpWithPhone) fullPhoneNumber else email, color = Color(0xFF94A3B8), fontSize = 11.sp)
                                         }
                                     }
                                 }
@@ -1351,10 +1381,10 @@ fun AuthScreen(
                                 }
                             }
 
-                            if (signUpStep < 5) {
+                            if (signUpStep < 2) {
                                 val isNextEnabled = when (signUpStep) {
-                                    1 -> email.isNotBlank() && email.contains("@") && password.length >= 6 && confirmPassword == password
-                                    2 -> fullName.isNotBlank() && username.length >= 3 && usernameStatus == AvailabilityStatus.AVAILABLE && isAgeValid()
+                                    1 -> (if (signUpWithPhone) (isPhoneFormatValid() && phoneStatus != AvailabilityStatus.TAKEN) else (email.isNotBlank() && email.contains("@"))) && password.length >= 6 && fullName.isNotBlank() && username.length >= 3 && usernameStatus == AvailabilityStatus.AVAILABLE
+                                    2 -> isAgeValid()
                                     3 -> isPhoneFormatValid() && phoneStatus != AvailabilityStatus.TAKEN
                                     4 -> photoBase64.isNotBlank()
                                     else -> true
@@ -1362,11 +1392,7 @@ fun AuthScreen(
 
                                 Button(
                                     onClick = {
-                                        if (signUpStep == 1 && (password != confirmPassword)) {
-                                            errorMessage = VynoraStrings.passwordsDoNotMatch(currentLanguage)
-                                            return@Button
-                                        }
-                                        signUpStep++
+                                                                                signUpStep++
                                         errorMessage = null
                                     },
                                     enabled = isNextEnabled,
@@ -1383,15 +1409,15 @@ fun AuthScreen(
                                         isSigningIn = true
                                         errorMessage = null
                                         viewModel.signUpWithEmail(
-                                            email = email,
+                                            email = if (signUpWithPhone) toAuthEmail(fullPhoneNumber) else email,
                                             pass = password,
                                             username = username,
                                             fullName = fullName,
                                             referralCode = referralCode.ifBlank { null },
                                             gender = gender,
                                             dob = formattedDob(),
-                                            phone = fullPhoneNumber,
-                                            phoneVerified = isPhoneVerified,
+                                            phone = if (signUpWithPhone) fullPhoneNumber else "",
+                                            phoneVerified = false,
                                             photoBase64 = photoBase64,
                                             onSuccess = {
                                                 isSigningIn = false
@@ -1403,7 +1429,7 @@ fun AuthScreen(
                                             }
                                         )
                                     },
-                                    enabled = !isSigningIn && termsAgreed && is13OrOlder && contentRulesAccepted,
+                                    enabled = !isSigningIn && isAgeValid() && termsAgreed && is13OrOlder && contentRulesAccepted,
                                     modifier = Modifier.weight(1.5f).height(48.dp).testTag("create_account_final_button"),
                                     shape = RoundedCornerShape(24.dp),
                                     colors = ButtonDefaults.buttonColors(containerColor = VynoraNeonCyan)
