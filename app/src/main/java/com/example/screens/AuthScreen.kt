@@ -78,12 +78,13 @@ fun AuthScreen(
     var isSignUpTab by remember { mutableStateOf(false) } // Default to Sign In tab so app launches directly on Sign In!
     var signUpStep by remember { mutableStateOf(1) } // 1..2
     var signUpWithPhone by remember { mutableStateOf(false) }
-    fun toAuthEmail(input: String): String {
+    // One mobile number can have up to 5 accounts: slot 0 = "number", slot 1..4 = "number.N"
+    fun toAuthEmail(input: String, slot: Int = 0): String {
         val t = input.trim()
         if (t.contains("@")) return t
         var d = t.filter { it.isDigit() }
         if (d.length == 10) d = "91$d"
-        return "$d@phone.vynora.app"
+        return if (slot == 0) "$d@phone.vynora.app" else "$d.$slot@phone.vynora.app"
     }
 
     // --- Sign In & Step 1 Fields ---
@@ -499,18 +500,25 @@ fun AuthScreen(
                             onClick = {
                                 isSigningIn = true
                                 errorMessage = null
-                                viewModel.signInWithEmail(
-                                    email = toAuthEmail(email),
-                                    pass = password,
-                                    onSuccess = {
-                                        isSigningIn = false
-                                        onAuthSuccess()
-                                    },
-                                    onError = { err ->
-                                        isSigningIn = false
-                                        errorMessage = err
-                                    }
-                                )
+                                fun attemptLogin(slot: Int) {
+                                    viewModel.signInWithEmail(
+                                        email = toAuthEmail(email, slot),
+                                        pass = password,
+                                        onSuccess = {
+                                            isSigningIn = false
+                                            onAuthSuccess()
+                                        },
+                                        onError = { err ->
+                                            if (!email.contains("@") && slot < 4) {
+                                                attemptLogin(slot + 1)
+                                            } else {
+                                                isSigningIn = false
+                                                errorMessage = err
+                                            }
+                                        }
+                                    )
+                                }
+                                attemptLogin(0)
                             },
                             enabled = !isSigningIn && email.isNotBlank() && password.length >= 6,
                             modifier = Modifier
@@ -1408,26 +1416,33 @@ Spacer(modifier = Modifier.height(10.dp))
                                     onClick = {
                                         isSigningIn = true
                                         errorMessage = null
-                                        viewModel.signUpWithEmail(
-                                            email = if (signUpWithPhone) toAuthEmail(fullPhoneNumber) else email,
-                                            pass = password,
-                                            username = username,
-                                            fullName = fullName,
-                                            referralCode = referralCode.ifBlank { null },
-                                            gender = gender,
-                                            dob = formattedDob(),
-                                            phone = if (signUpWithPhone) fullPhoneNumber else "",
-                                            phoneVerified = false,
-                                            photoBase64 = photoBase64,
-                                            onSuccess = {
-                                                isSigningIn = false
-                                                onAuthSuccess()
-                                            },
-                                            onError = { err ->
-                                                isSigningIn = false
-                                                errorMessage = err
-                                            }
-                                        )
+                                        fun attemptSignUp(slot: Int) {
+                                            viewModel.signUpWithEmail(
+                                                email = if (signUpWithPhone) toAuthEmail(fullPhoneNumber, slot) else email,
+                                                pass = password,
+                                                username = username,
+                                                fullName = fullName,
+                                                referralCode = referralCode.ifBlank { null },
+                                                gender = gender,
+                                                dob = formattedDob(),
+                                                phone = if (signUpWithPhone) fullPhoneNumber else "",
+                                                phoneVerified = false,
+                                                photoBase64 = photoBase64,
+                                                onSuccess = {
+                                                    isSigningIn = false
+                                                    onAuthSuccess()
+                                                },
+                                                onError = { err ->
+                                                    if (signUpWithPhone && slot < 4 && err.contains("already in use", ignoreCase = true)) {
+                                                        attemptSignUp(slot + 1)
+                                                    } else {
+                                                        isSigningIn = false
+                                                        errorMessage = err
+                                                    }
+                                                }
+                                            )
+                                        }
+                                        attemptSignUp(0)
                                     },
                                     enabled = !isSigningIn && isAgeValid() && termsAgreed && is13OrOlder && contentRulesAccepted,
                                     modifier = Modifier.weight(1.5f).height(48.dp).testTag("create_account_final_button"),
