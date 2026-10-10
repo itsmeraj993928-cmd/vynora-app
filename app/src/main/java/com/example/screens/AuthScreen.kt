@@ -119,6 +119,7 @@ fun AuthScreen(
     // --- Step 5 Fields: Terms & Age Gate ---
     var termsAgreed by remember { mutableStateOf(false) }
     var is13OrOlder by remember { mutableStateOf(false) }
+    var contentRulesAccepted by remember { mutableStateOf(false) }
     var referralCode by remember { mutableStateOf("") }
     var activeLegalModal by remember { mutableStateOf<String?>(null) } // "terms", "privacy", "guidelines"
 
@@ -204,12 +205,12 @@ fun AuthScreen(
         usernameStatus = if (isAvail) AvailabilityStatus.AVAILABLE else AvailabilityStatus.TAKEN
     }
 
-    // Age validation helper (Must be 13+ years old)
+    // Age validation helper (Must be 18+ years old)
     fun isAgeValid(): Boolean {
         val y = dobYear.toIntOrNull() ?: return false
         val m = dobMonth.toIntOrNull() ?: return false
         val d = dobDay.toIntOrNull() ?: return false
-        if (y !in 1920..2026 || m !in 1..12 || d !in 1..31) return false
+        if (y !in 1920..Calendar.getInstance().get(Calendar.YEAR) || m !in 1..12 || d !in 1..31) return false
 
         val dobCal = Calendar.getInstance().apply { set(y, m - 1, d) }
         val nowCal = Calendar.getInstance()
@@ -217,7 +218,7 @@ fun AuthScreen(
         if (nowCal.get(Calendar.DAY_OF_YEAR) < dobCal.get(Calendar.DAY_OF_YEAR)) {
             age--
         }
-        return age >= 13
+        return age >= 18
     }
 
     fun formattedDob(): String {
@@ -781,7 +782,7 @@ fun AuthScreen(
 
                             Spacer(modifier = Modifier.height(10.dp))
 
-                            // Date of Birth (DD / MM / YYYY - 13+ only)
+                            // Date of Birth (DD / MM / YYYY - 18+ only)
                             Column(modifier = Modifier.fillMaxWidth()) {
                                 Text(
                                     text = VynoraStrings.dobLabel(currentLanguage),
@@ -826,14 +827,14 @@ fun AuthScreen(
                                 if (dobDay.isNotBlank() && dobMonth.isNotBlank() && dobYear.length == 4) {
                                     if (!isAgeValid()) {
                                         Text(
-                                            text = VynoraStrings.dobErrorUnderage(currentLanguage),
+                                            text = "You must be at least 18 years old to join VYNORA. / VYNORA से जुड़ने के लिए आपकी उम्र कम से कम 18 वर्ष होनी चाहिए।",
                                             color = Color(0xFFEF4444),
                                             fontSize = 11.sp,
                                             modifier = Modifier.padding(top = 4.dp)
                                         )
                                     } else {
                                         Text(
-                                            text = "Age verified (13+) ✓",
+                                            text = "Age verified (18+) ✓",
                                             color = Color(0xFF10B981),
                                             fontSize = 11.sp,
                                             modifier = Modifier.padding(top = 4.dp)
@@ -1269,7 +1270,7 @@ fun AuthScreen(
 
                                 Spacer(modifier = Modifier.height(8.dp))
 
-                                // Checkbox 2: 13+ Age Verification
+                                // Checkbox 2: 18+ Age Verification
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     verticalAlignment = Alignment.CenterVertically
@@ -1281,10 +1282,40 @@ fun AuthScreen(
                                         modifier = Modifier.testTag("age_checkbox")
                                     )
                                     Text(
-                                        text = VynoraStrings.age13Checkbox(currentLanguage),
+                                        text = "I confirm that I am 18 years or older. / मैं पुष्टि करता/करती हूँ कि मेरी उम्र 18 वर्ष या उससे अधिक है।",
                                         fontSize = 12.sp,
                                         color = Color.White
                                     )
+                                }
+
+                                Spacer(modifier = Modifier.height(8.dp))
+
+                                // Checkbox 3: Content rules (no nudity / 18+ / violence) - English + Hindi
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.Top
+                                ) {
+                                    Checkbox(
+                                        checked = contentRulesAccepted,
+                                        onCheckedChange = { contentRulesAccepted = it },
+                                        colors = CheckboxDefaults.colors(checkedColor = VynoraNeonPink),
+                                        modifier = Modifier.testTag("content_rules_checkbox")
+                                    )
+                                    Column(modifier = Modifier.padding(top = 12.dp)) {
+                                        Text(
+                                            text = "I agree that VYNORA does not allow nudity, porn/18+ content, violence, hate or illegal content. If I post such content, my account can be suspended or permanently deleted without notice. I accept all the Terms, Privacy Policy and these rules.",
+                                            fontSize = 11.5.sp,
+                                            lineHeight = 16.sp,
+                                            color = Color.White
+                                        )
+                                        Spacer(modifier = Modifier.height(6.dp))
+                                        Text(
+                                            text = "मैं सहमत हूँ कि VYNORA पर नग्नता, पोर्न/18+ सामग्री, हिंसा, नफ़रत या गैरकानूनी सामग्री डालना मना है। ऐसा करने पर मेरा अकाउंट बिना सूचना के बंद या हमेशा के लिए डिलीट किया जा सकता है। मैं सभी शर्तें, गोपनीयता नीति और ये नियम स्वीकार करता/करती हूँ।",
+                                            fontSize = 11.5.sp,
+                                            lineHeight = 16.sp,
+                                            color = Color(0xFFCBD5E1)
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -1346,7 +1377,7 @@ fun AuthScreen(
                                     Text(VynoraStrings.nextButton(currentLanguage), color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                                 }
                             } else {
-                                // Step 5: Final "Create Account" CTA Button (stays disabled until both terms and 13+ are ticked)
+                                // Step 5: Final "Create Account" CTA Button (stays disabled until terms, 18+ and content rules are ticked)
                                 Button(
                                     onClick = {
                                         isSigningIn = true
@@ -1372,7 +1403,7 @@ fun AuthScreen(
                                             }
                                         )
                                     },
-                                    enabled = !isSigningIn && termsAgreed && is13OrOlder,
+                                    enabled = !isSigningIn && termsAgreed && is13OrOlder && contentRulesAccepted,
                                     modifier = Modifier.weight(1.5f).height(48.dp).testTag("create_account_final_button"),
                                     shape = RoundedCornerShape(24.dp),
                                     colors = ButtonDefaults.buttonColors(containerColor = VynoraNeonCyan)
@@ -1548,7 +1579,7 @@ fun AuthScreen(
                 Your mobile phone number and date of birth are private data principles strictly protected by Firestore zero-trust rules. They are never displayed to other users.
 
                 4. CHILDREN'S DATA & AGE GATE
-                Users must be at least 13 years of age. VYNORA strictly complies with the age threshold provisions under the DPDP Act.
+                Users must be at least 18 years of age. VYNORA strictly complies with the age threshold provisions under the DPDP Act.
 
                 5. RIGHTS OF THE DATA PRINCIPAL
                 You retain the right to access, rectify, or request erasure of your data at any time via Settings -> Account.
@@ -1559,7 +1590,7 @@ fun AuthScreen(
                 By registering or using VYNORA, you agree to be bound by these Terms of Service.
 
                 2. USER ACCOUNTS & AGE RESTRICTIONS
-                You must be 13 years of age or older to register an account. You are responsible for safeguarding your login credentials.
+                You must be 18 years of age or older to register an account. You are responsible for safeguarding your login credentials.
 
                 3. ORIGINALITY & INTELLECTUAL PROPERTY
                 You retain ownership rights to content you post. Automated scrapers, spamming, and harassment are strictly prohibited.
