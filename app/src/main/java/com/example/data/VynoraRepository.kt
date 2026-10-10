@@ -492,7 +492,13 @@ class VynoraRepository(
                         id = id,
                         participant = if (otherUserId == VynoraOfficial.OFFICIAL_USER_ID) VynoraOfficial.createOfficialUser() else User(id = otherUserId, username = otherUserId),
                         lastMessage = ChatMessage(text = lastMessageText, timestamp = "Recent"),
-                        updatedAt = doc.getLong("updatedAt") ?: System.currentTimeMillis()
+                        updatedAt = (doc.get("updatedAt").let { v ->
+                            when (v) {
+                                is Number -> v.toLong()
+                                is com.google.firebase.Timestamp -> v.toDate().time
+                                else -> null
+                            }
+                        }) ?: System.currentTimeMillis()
                     )
                 } ?: emptyList()
                 trySend(chats)
