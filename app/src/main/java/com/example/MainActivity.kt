@@ -356,7 +356,13 @@ fun VynoraApp(viewModel: VynoraViewModel) {
                     onSelectLanguage = { lang -> viewModel.setLanguage(lang) },
                     onOpenLegalDoc = { doc -> viewModel.navigateTo(ScreenDestination.Legal(doc)) },
                     onBack = { viewModel.navigateBack() },
-                    onToast = { msg -> viewModel.showToast(msg) }
+                    onToast = { msg ->
+                        if (msg.contains("Logged out", ignoreCase = true)) {
+                            viewModel.signOut()
+                        } else {
+                            viewModel.showToast(msg)
+                        }
+                    }
                 )
             }
             is ScreenDestination.AdminPanel -> {
