@@ -215,9 +215,6 @@ fun VynoraApp(viewModel: VynoraViewModel) {
                                         onRequestAiHashtags = { topic, onResult ->
                                             viewModel.requestAiHashtags(topic, onResult)
                                         },
-                                        savedAccounts = savedAccountsList,
-                                        onSwitchAccount = { ident -> viewModel.switchAccount(ident) },
-                                        onAddAccount = { viewModel.addAccount() },
                                         onToast = { msg -> viewModel.showToast(msg) }
                                     )
                                 }
@@ -255,6 +252,9 @@ fun VynoraApp(viewModel: VynoraViewModel) {
                                         onAddHighlight = { title, coverUrl ->
                                             viewModel.addHighlight(title, coverUrl)
                                         },
+                                        savedAccounts = savedAccountsList,
+                                        onSwitchAccount = { ident -> viewModel.switchAccount(ident) },
+                                        onAddAccount = { viewModel.addAccount() },
                                         onToast = { msg -> viewModel.showToast(msg) }
                                     )
                                 }
