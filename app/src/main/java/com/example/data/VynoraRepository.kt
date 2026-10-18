@@ -15,10 +15,23 @@ import com.google.firebase.firestore.Query
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import java.util.UUID
 
 private const val MAX_ACCOUNTS_PER_PHONE = 5
+
+internal data class NotificationDoc(
+    val id: String = "",
+    val recipientId: String = "",
+    val type: NotificationType = NotificationType.SYSTEM,
+    val user: User = User(),
+    val contentPreview: String? = null,
+    val timeGroup: String = "Today",
+    val timestamp: String = "Just now",
+    val isRead: Boolean = false,
+    val createdAt: Long = System.currentTimeMillis()
+)
 
 class VynoraRepository(
     private val context: Context,
@@ -489,35 +502,58 @@ class VynoraRepository(
         awaitClose { listener.remove() }
     }
 
+    private val userCache = mutableMapOf<String, User>()
+
+    private suspend fun loadUserCached(uid: String): User {
+        if (uid == VynoraOfficial.OFFICIAL_USER_ID) return VynoraOfficial.createOfficialUser()
+        userCache[uid]?.let { return it }
+        return try {
+            val u = db.collection("users").document(uid).get().await().toObject(User::class.java)
+            val user = (u ?: User(id = uid, username = uid)).copy(id = uid)
+            userCache[uid] = user
+            user
+        } catch (e: Exception) {
+            User(id = uid, username = uid)
+        }
+    }
+
     fun observeChats(userId: String): Flow<List<ChatConversation>> = callbackFlow {
         val listener = db.collection("chats")
             .whereArrayContains("participantIds", userId)
-            .orderBy("updatedAt", Query.Direction.DESCENDING)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
-                    trySend(emptyList())
+                    Log.w("VynoraRepo", "chats listener error", error)
                     return@addSnapshotListener
                 }
-                val chats = snapshot?.documents?.mapNotNull { doc ->
-                    val id = doc.getString("id") ?: doc.id
-                    val participantIds = doc.get("participantIds") as? List<String> ?: listOf()
-                    val otherUserId = participantIds.firstOrNull { it != userId } ?: VynoraOfficial.OFFICIAL_USER_ID
-                    val lastMessageText = doc.getString("lastMessage") ?: ""
-
-                    ChatConversation(
-                        id = id,
-                        participant = if (otherUserId == VynoraOfficial.OFFICIAL_USER_ID) VynoraOfficial.createOfficialUser() else User(id = otherUserId, username = otherUserId),
-                        lastMessage = ChatMessage(text = lastMessageText, timestamp = "Recent"),
-                        updatedAt = (doc.get("updatedAt").let { v ->
-                            when (v) {
+                val docs = snapshot?.documents ?: emptyList()
+                launch {
+                    val chats = docs.mapNotNull { doc ->
+                        try {
+                            val id = doc.getString("id") ?: doc.id
+                            val participantIds = (doc.get("participantIds") as? List<*>)?.filterIsInstance<String>() ?: listOf()
+                            val otherUserId = participantIds.firstOrNull { it != userId } ?: VynoraOfficial.OFFICIAL_USER_ID
+                            val lastMessageText = doc.getString("lastMessage") ?: ""
+                            val msgs = try {
+                                doc.reference.collection("messages").get().await()
+                                    .documents.mapNotNull { m -> try { m.toObject(ChatMessage::class.java) } catch (e: Exception) { null } }
+                                    .sortedBy { it.createdAt }
+                            } catch (e: Exception) { emptyList() }
+                            val updatedAt = when (val v = doc.get("updatedAt")) {
                                 is Number -> v.toLong()
                                 is com.google.firebase.Timestamp -> v.toDate().time
                                 else -> null
-                            }
-                        }) ?: System.currentTimeMillis()
-                    )
-                } ?: emptyList()
-                trySend(chats)
+                            } ?: System.currentTimeMillis()
+                            ChatConversation(
+                                id = id,
+                                participant = loadUserCached(otherUserId),
+                                messages = msgs,
+                                lastMessage = msgs.lastOrNull() ?: ChatMessage(text = lastMessageText, timestamp = "Recent"),
+                                updatedAt = updatedAt
+                            )
+                        } catch (e: Exception) { null }
+                    }
+                    trySend(chats.sortedByDescending { it.updatedAt })
+                }
             }
         awaitClose { listener.remove() }
     }
@@ -525,17 +561,70 @@ class VynoraRepository(
     fun observeNotifications(userId: String): Flow<List<NotificationItem>> = callbackFlow {
         val listener = db.collection("notifications")
             .whereEqualTo("recipientId", userId)
-            .orderBy("createdAt", Query.Direction.DESCENDING)
-            .limit(50)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
-                    trySend(emptyList())
+                    Log.w("VynoraRepo", "notifications listener error", error)
                     return@addSnapshotListener
                 }
-                val notifs = snapshot?.toObjects(NotificationItem::class.java) ?: emptyList()
-                trySend(notifs)
+                val notifs = snapshot?.documents?.mapNotNull { d ->
+                    try { d.toObject(NotificationItem::class.java) } catch (e: Exception) { null }
+                } ?: emptyList()
+                trySend(notifs.sortedByDescending { it.createdAt }.take(100))
             }
         awaitClose { listener.remove() }
+    }
+
+    fun observeLikedPostIds(userId: String): Flow<Set<String>> = callbackFlow {
+        val listener = db.collection("users").document(userId).collection("likedPosts")
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    Log.w("VynoraRepo", "likedPosts listener error", error)
+                    return@addSnapshotListener
+                }
+                trySend(snapshot?.documents?.map { it.id }?.toSet() ?: emptySet())
+            }
+        awaitClose { listener.remove() }
+    }
+
+    suspend fun setPostLike(postId: String, me: User, authorId: String, liked: Boolean, preview: String) {
+        try {
+            val likedRef = db.collection("users").document(me.id).collection("likedPosts").document(postId)
+            val postRef = db.collection("posts").document(postId)
+            if (liked) {
+                likedRef.set(mapOf("postId" to postId, "at" to FieldValue.serverTimestamp())).await()
+                postRef.update("likesCount", FieldValue.increment(1)).await()
+            } else {
+                likedRef.delete().await()
+                postRef.update("likesCount", FieldValue.increment(-1)).await()
+            }
+        } catch (e: Exception) {
+            Log.w("VynoraRepo", "setPostLike failed", e)
+        }
+        try {
+            if (authorId.isNotBlank() && authorId != me.id) {
+                val nid = "like_${postId}_${me.id}"
+                val ref = db.collection("notifications").document(nid)
+                if (liked) {
+                    val smallUser = me.copy(
+                        avatarUrl = if (me.avatarUrl.startsWith("data:")) "" else me.avatarUrl,
+                        photoBase64 = ""
+                    )
+                    ref.set(
+                        NotificationDoc(
+                            id = nid,
+                            recipientId = authorId,
+                            type = NotificationType.LIKE,
+                            user = smallUser,
+                            contentPreview = preview
+                        )
+                    ).await()
+                } else {
+                    ref.delete().await()
+                }
+            }
+        } catch (e: Exception) {
+            Log.w("VynoraRepo", "like notification failed", e)
+        }
     }
 
     // --- Admin Operations ---
@@ -792,6 +881,127 @@ class VynoraRepository(
             Result.success(finalUser)
         } catch (e: Exception) {
             Result.failure(e)
+        }
+    }
+
+    // ---------- Social actions (all persisted in Firestore) ----------
+
+    private fun slimUser(u: User): User = u.copy(
+        avatarUrl = if (u.avatarUrl.startsWith("data:")) "" else u.avatarUrl,
+        photoBase64 = ""
+    )
+
+    private suspend fun writeNotification(nid: String, recipientId: String, type: NotificationType, me: User, preview: String?) {
+        try {
+            if (recipientId.isBlank() || recipientId == me.id) return
+            db.collection("notifications").document(nid).set(
+                NotificationDoc(
+                    id = nid,
+                    recipientId = recipientId,
+                    type = type,
+                    user = slimUser(me),
+                    contentPreview = preview
+                )
+            ).await()
+        } catch (e: Exception) {
+            Log.w("VynoraRepo", "notification write failed", e)
+        }
+    }
+
+    private suspend fun removeNotification(nid: String) {
+        try { db.collection("notifications").document(nid).delete().await() } catch (e: Exception) { }
+    }
+
+    suspend fun setFollow(me: User, targetId: String, follow: Boolean) {
+        if (targetId.isBlank() || targetId == me.id) return
+        try {
+            val ref = db.collection("follows").document("${me.id}_$targetId")
+            if (follow) {
+                ref.set(mapOf("followerId" to me.id, "followedId" to targetId, "createdAt" to System.currentTimeMillis())).await()
+            } else {
+                ref.delete().await()
+            }
+            val d = if (follow) 1L else -1L
+            try { db.collection("users").document(me.id).update("followingCount", FieldValue.increment(d)).await() } catch (e: Exception) { }
+            try { db.collection("users").document(targetId).update("followersCount", FieldValue.increment(d)).await() } catch (e: Exception) { }
+        } catch (e: Exception) {
+            Log.w("VynoraRepo", "setFollow failed", e)
+        }
+        val nid = "follow_${me.id}_$targetId"
+        if (follow) writeNotification(nid, targetId, NotificationType.FOLLOW, me, null) else removeNotification(nid)
+    }
+
+    fun observeLikedClipIds(userId: String): Flow<Set<String>> = callbackFlow {
+        val listener = db.collection("users").document(userId).collection("likedClips")
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    Log.w("VynoraRepo", "likedClips listener error", error)
+                    return@addSnapshotListener
+                }
+                trySend(snapshot?.documents?.map { it.id }?.toSet() ?: emptySet())
+            }
+        awaitClose { listener.remove() }
+    }
+
+    suspend fun setClipLike(clipId: String, me: User, authorId: String, liked: Boolean, preview: String) {
+        try {
+            val likedRef = db.collection("users").document(me.id).collection("likedClips").document(clipId)
+            val clipRef = db.collection("clips").document(clipId)
+            if (liked) {
+                likedRef.set(mapOf("clipId" to clipId, "at" to FieldValue.serverTimestamp())).await()
+                clipRef.update("likesCount", FieldValue.increment(1)).await()
+            } else {
+                likedRef.delete().await()
+                clipRef.update("likesCount", FieldValue.increment(-1)).await()
+            }
+        } catch (e: Exception) {
+            Log.w("VynoraRepo", "setClipLike failed", e)
+        }
+        val nid = "cliplike_${clipId}_${me.id}"
+        if (liked) writeNotification(nid, authorId, NotificationType.LIKE, me, preview) else removeNotification(nid)
+    }
+
+    suspend fun saveComment(postId: String, comment: Comment, postAuthorId: String) {
+        try {
+            val c = comment.copy(author = slimUser(comment.author))
+            db.collection("posts").document(postId).update("comments", FieldValue.arrayUnion(c)).await()
+        } catch (e: Exception) {
+            Log.w("VynoraRepo", "saveComment failed", e)
+        }
+        writeNotification("comment_${comment.id}", postAuthorId, NotificationType.COMMENT, comment.author, comment.text.take(60))
+    }
+
+    suspend fun sendChatMessage(conversationId: String, me: User, otherId: String, msg: ChatMessage) {
+        try {
+            val chatRef = db.collection("chats").document(conversationId)
+            chatRef.set(
+                mapOf(
+                    "id" to conversationId,
+                    "participantIds" to listOf(me.id, otherId),
+                    "lastMessage" to msg.text.take(60),
+                    "updatedAt" to System.currentTimeMillis()
+                ),
+                com.google.firebase.firestore.SetOptions.merge()
+            ).await()
+            chatRef.collection("messages").document(msg.id).set(msg).await()
+        } catch (e: Exception) {
+            Log.w("VynoraRepo", "sendChatMessage failed", e)
+        }
+    }
+
+    suspend fun saveReport(report: ReportItem) {
+        try {
+            db.collection("reports").document(report.id).set(report).await()
+        } catch (e: Exception) {
+            Log.w("VynoraRepo", "saveReport failed", e)
+        }
+    }
+
+    suspend fun updateReportStatus(reportId: String, status: String) {
+        try {
+            db.collection("reports").document(reportId).update("status", status).await()
+        } catch (e: Exception) {
+            Log.w("VynoraRepo", "updateReportStatus failed", e)
         }
     }
 }
