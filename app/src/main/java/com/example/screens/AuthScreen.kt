@@ -88,7 +88,7 @@ fun AuthScreen(
     }
 
     // --- Sign In & Step 1 Fields ---
-    var email by remember { mutableStateOf("") }
+    var email by remember { mutableStateOf(viewModel.prefillIdentifier) }
     var password by remember { mutableStateOf("") }
     var confirmPassword by remember { mutableStateOf("") }
     var isPasswordVisible by remember { mutableStateOf(false) }

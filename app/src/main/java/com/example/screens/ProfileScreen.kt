@@ -62,9 +62,13 @@ fun ProfileScreen(
     onOpenEditProfile: () -> Unit = {},
     onAddHighlight: (title: String, coverUrl: String) -> Unit = { _, _ -> },
     onToast: (String) -> Unit,
+    savedAccounts: List<com.example.model.SavedAccount> = emptyList(),
+    onSwitchAccount: (String) -> Unit = {},
+    onAddAccount: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    var showAccountSwitcher by remember { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
 
     var selectedTab by remember { mutableStateOf(0) } // 0: Posts, 1: Clips, 2: Tagged, 3: Saved
@@ -127,6 +131,7 @@ fun ProfileScreen(
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Row(
+                modifier = Modifier.clickable { showAccountSwitcher = true },
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
@@ -141,6 +146,11 @@ fun ProfileScreen(
                 } else if (user.isPlusActive) {
                     VynoraPlusBadge(size = 18.dp)
                 }
+                Icon(
+                    imageVector = Icons.Outlined.ArrowDropDown,
+                    contentDescription = "Switch account",
+                    tint = if (isDarkMode) Color.White else Color(0xFF0F172A)
+                )
             }
 
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -679,6 +689,60 @@ fun ProfileScreen(
                 }
             }
         }
+    }
+
+    // --- Account switcher ---
+    if (showAccountSwitcher) {
+        AlertDialog(
+            onDismissRequest = { showAccountSwitcher = false },
+            shape = RoundedCornerShape(20.dp),
+            containerColor = cardBg,
+            title = { Text("Accounts", fontWeight = FontWeight.Bold, color = if (isDarkMode) Color.White else Color(0xFF0F172A)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    savedAccounts.forEach { acc ->
+                        val isCurrent = acc.id == user.id
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .clickable(enabled = !isCurrent) {
+                                    showAccountSwitcher = false
+                                    onSwitchAccount(acc.identifier)
+                                }
+                                .padding(8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            StoryRingAvatar(avatarUrl = acc.avatarUrl, hasStory = false, size = 40.dp)
+                            Text(
+                                text = "@${acc.username}",
+                                modifier = Modifier.weight(1f),
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (isDarkMode) Color.White else Color(0xFF0F172A)
+                            )
+                            if (isCurrent) Text("Current", color = VynoraNeonCyan, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                    OutlinedButton(
+                        onClick = { showAccountSwitcher = false; onAddAccount() },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(14.dp)
+                    ) {
+                        Icon(Icons.Outlined.Add, contentDescription = null, tint = VynoraNeonCyan)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Add account / Log in to another", color = VynoraNeonCyan, fontWeight = FontWeight.Bold)
+                    }
+                    Text(
+                        "Account badalne ke liye us account ka password dalna padega.",
+                        fontSize = 11.sp,
+                        color = Color(0xFF94A3B8)
+                    )
+                }
+            },
+            confirmButton = {},
+            dismissButton = { TextButton(onClick = { showAccountSwitcher = false }) { Text("Close", color = VynoraNeonCyan) } }
+        )
     }
 
     // --- Edit Profile Sheet ---
