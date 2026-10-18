@@ -99,6 +99,7 @@ open class MainActivity : ComponentActivity() {
 @Composable
 fun VynoraApp(viewModel: VynoraViewModel) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val savedAccountsList by viewModel.savedAccounts.collectAsStateWithLifecycle()
 
     // Handle Android system back press
     val hostContext = androidx.compose.ui.platform.LocalContext.current
@@ -214,6 +215,9 @@ fun VynoraApp(viewModel: VynoraViewModel) {
                                         onRequestAiHashtags = { topic, onResult ->
                                             viewModel.requestAiHashtags(topic, onResult)
                                         },
+                                        savedAccounts = savedAccountsList,
+                                        onSwitchAccount = { ident -> viewModel.switchAccount(ident) },
+                                        onAddAccount = { viewModel.addAccount() },
                                         onToast = { msg -> viewModel.showToast(msg) }
                                     )
                                 }
