@@ -23,6 +23,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
@@ -148,18 +149,55 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
             else -> true
         }
 
+    private var observeJob: kotlinx.coroutines.Job? = null
+    private var likedIds: Set<String> = emptySet()
+    private var likedClipIds: Set<String> = emptySet()
+
+    private fun blockedPrefs() = getApplication<Application>().getSharedPreferences("vynora_blocked", android.content.Context.MODE_PRIVATE)
+    private fun blockedNames(): Set<String> = try { blockedPrefs().getStringSet("names", emptySet()) ?: emptySet() } catch (e: Exception) { emptySet() }
+
     private fun startDataObservations(userId: String) {
-        viewModelScope.launch {
+        observeJob?.cancel()
+        likedIds = emptySet()
+        likedClipIds = emptySet()
+        observeJob = viewModelScope.launch {
             followingIds = repository.getFollowingIds(userId)
             launch {
                 repository.observePosts().collect { postsList ->
-                    val visible = postsList.filter { isVisibleTo(it.visibility, it.author.id, userId) }
+                    val blocked = blockedNames()
+                    val visible = postsList
+                        .filter { isVisibleTo(it.visibility, it.author.id, userId) && it.author.username !in blocked }
+                        .map {
+                            it.copy(
+                                isLiked = it.id in likedIds,
+                                author = it.author.copy(isFollowing = it.author.id in followingIds),
+                                comments = it.comments.sortedByDescending { c -> c.createdAt }
+                            )
+                        }
                     _uiState.update { it.copy(posts = visible) }
                 }
             }
             launch {
+                repository.observeLikedPostIds(userId).collect { ids ->
+                    likedIds = ids
+                    _uiState.update { s -> s.copy(posts = s.posts.map { p -> p.copy(isLiked = p.id in ids) }) }
+                }
+            }
+            launch {
+                repository.observeLikedClipIds(userId).collect { ids ->
+                    likedClipIds = ids
+                    _uiState.update { s -> s.copy(clips = s.clips.map { c -> c.copy(isLiked = c.id in ids) }) }
+                }
+            }
+            launch {
                 repository.observeClips().collect { clipsList ->
-                    val visible = clipsList.filter { isVisibleTo(it.visibility, it.author.id, userId) }
+                    val blocked = blockedNames()
+                    val visible = clipsList
+                        .filter { isVisibleTo(it.visibility, it.author.id, userId) && it.author.username !in blocked }
+                        .map {
+                            val f = it.author.id in followingIds
+                            it.copy(isLiked = it.id in likedClipIds, isFollowing = f, author = it.author.copy(isFollowing = f))
+                        }
                     _uiState.update { it.copy(clips = visible) }
                 }
             }
@@ -169,17 +207,62 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
                     _uiState.update { it.copy(moments = visible) }
                 }
             }
-        }
-        viewModelScope.launch {
-            repository.observeChats(userId).collect { chatsList ->
-                _uiState.update { it.copy(chats = chatsList) }
+            launch {
+                repository.observeChats(userId).collect { chatsList ->
+                    _uiState.update { it.copy(chats = chatsList) }
+                }
+            }
+            launch {
+                repository.observeNotifications(userId).collect { notifsList ->
+                    _uiState.update { it.copy(notifications = notifsList) }
+                }
+            }
+            launch {
+                val st = _uiState.first { it.currentUser?.id == userId }
+                st.currentUser?.let { rememberAccount(it, auth.currentUser?.email ?: it.email) }
             }
         }
-        viewModelScope.launch {
-            repository.observeNotifications(userId).collect { notifsList ->
-                _uiState.update { it.copy(notifications = notifsList) }
-            }
+    }
+
+    // --- Saved accounts (switch account). Passwords are never stored. ---
+    private val accountPrefs = application.getSharedPreferences("vynora_accounts", android.content.Context.MODE_PRIVATE)
+    private val _savedAccounts = MutableStateFlow(loadSavedAccounts())
+    val savedAccounts: StateFlow<List<SavedAccount>> = _savedAccounts.asStateFlow()
+    var prefillIdentifier: String = ""
+
+    private fun loadSavedAccounts(): List<SavedAccount> = try {
+        val arr = org.json.JSONArray(accountPrefs.getString("list", "[]"))
+        (0 until arr.length()).map {
+            val o = arr.getJSONObject(it)
+            SavedAccount(o.getString("id"), o.getString("username"), o.getString("identifier"), o.optString("avatarUrl", ""))
         }
+    } catch (e: Exception) { emptyList() }
+
+    private fun rememberAccount(user: User, authEmail: String) {
+        try {
+            val identifier = if (authEmail.endsWith("@phone.vynora.app"))
+                authEmail.substringBefore("@").substringBefore(".") else authEmail
+            val avatar = if (user.avatarUrl.length < 300_000) user.avatarUrl else ""
+            val updated = (_savedAccounts.value.filterNot { it.id == user.id } +
+                SavedAccount(user.id, user.username, identifier, avatar)).takeLast(5)
+            _savedAccounts.value = updated
+            val arr = org.json.JSONArray()
+            updated.forEach {
+                arr.put(org.json.JSONObject().put("id", it.id).put("username", it.username)
+                    .put("identifier", it.identifier).put("avatarUrl", it.avatarUrl))
+            }
+            accountPrefs.edit().putString("list", arr.toString()).apply()
+        } catch (e: Exception) { }
+    }
+
+    fun switchAccount(identifier: String) {
+        prefillIdentifier = identifier
+        signOut()
+    }
+
+    fun addAccount() {
+        prefillIdentifier = ""
+        signOut()
     }
 
     // Navigation
@@ -505,6 +588,8 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun signOut() {
+        observeJob?.cancel()
+        likedIds = emptySet()
         authService.signOut()
         _uiState.update {
             it.copy(
@@ -589,6 +674,8 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun logout() {
+        observeJob?.cancel()
+        likedIds = emptySet()
         auth.signOut()
         _uiState.update {
             it.copy(
@@ -633,17 +720,20 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
     // --- Posts & Feed Actions ---
 
     fun toggleLikePost(postId: String) {
+        val me = _uiState.value.currentUser ?: return
+        val post = _uiState.value.posts.firstOrNull { it.id == postId } ?: return
+        val newLiked = !post.isLiked
         _uiState.update { state ->
-            val updated = state.posts.map { post ->
-                if (post.id == postId) {
-                    val newLiked = !post.isLiked
-                    post.copy(
-                        isLiked = newLiked,
-                        likesCount = if (newLiked) post.likesCount + 1 else maxOf(0, post.likesCount - 1)
-                    )
-                } else post
-            }
-            state.copy(posts = updated)
+            state.copy(posts = state.posts.map { p ->
+                if (p.id == postId) p.copy(
+                    isLiked = newLiked,
+                    likesCount = if (newLiked) p.likesCount + 1 else maxOf(0, p.likesCount - 1)
+                ) else p
+            })
+        }
+        likedIds = if (newLiked) likedIds + postId else likedIds - postId
+        viewModelScope.launch {
+            repository.setPostLike(postId, me, post.author.id, newLiked, post.caption.take(60))
         }
     }
 
@@ -697,6 +787,8 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
             }
             state.copy(posts = updated)
         }
+        val postAuthorId = _uiState.value.posts.firstOrNull { it.id == postId }?.author?.id ?: ""
+        viewModelScope.launch { repository.saveComment(postId, newComment, postAuthorId) }
     }
 
     fun toggleLikeComment(postId: String, commentId: String) {
@@ -787,6 +879,7 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
                 activeReportTarget = null
             )
         }
+        viewModelScope.launch { repository.saveReport(newReport) }
         showToast("Report submitted to moderation team. Thank you for keeping VYNORA safe.")
     }
 
@@ -795,27 +888,33 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
             showToast("The official VYNORA account cannot be blocked.")
             return
         }
+        try {
+            val names = blockedNames() + username
+            blockedPrefs().edit().putStringSet("names", names).apply()
+        } catch (e: Exception) { }
         _uiState.update { state ->
             val filteredPosts = state.posts.filterNot { it.author.username == username }
+            val filteredClips = state.clips.filterNot { it.author.username == username }
             showToast("Blocked @$username")
-            state.copy(posts = filteredPosts)
+            state.copy(posts = filteredPosts, clips = filteredClips)
         }
     }
 
     // Clips interactions
     fun toggleLikeClip(clipId: String) {
+        val me = _uiState.value.currentUser ?: return
+        val clip = _uiState.value.clips.firstOrNull { it.id == clipId } ?: return
+        val liked = !clip.isLiked
         _uiState.update { state ->
-            val updated = state.clips.map { clip ->
-                if (clip.id == clipId) {
-                    val liked = !clip.isLiked
-                    clip.copy(
-                        isLiked = liked,
-                        likesCount = if (liked) clip.likesCount + 1 else maxOf(0, clip.likesCount - 1)
-                    )
-                } else clip
-            }
-            state.copy(clips = updated)
+            state.copy(clips = state.clips.map { c ->
+                if (c.id == clipId) c.copy(
+                    isLiked = liked,
+                    likesCount = if (liked) c.likesCount + 1 else maxOf(0, c.likesCount - 1)
+                ) else c
+            })
         }
+        likedClipIds = if (liked) likedClipIds + clipId else likedClipIds - clipId
+        viewModelScope.launch { repository.setClipLike(clipId, me, clip.author.id, liked, clip.caption.take(60)) }
     }
 
     fun toggleSaveClip(clipId: String) {
@@ -834,23 +933,30 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
             showToast("You cannot unfollow the official VYNORA account.")
             return
         }
+        val me = _uiState.value.currentUser ?: return
+        val targetId = _uiState.value.posts.firstOrNull { it.author.username == username }?.author?.id
+            ?: _uiState.value.clips.firstOrNull { it.author.username == username }?.author?.id
+            ?: return
+        if (targetId == me.id) return
+        val nowFollowing = targetId !in followingIds
+        followingIds = if (nowFollowing) followingIds + targetId else followingIds - targetId
 
         _uiState.update { state ->
-            var nowFollowing = false
             val updatedPosts = state.posts.map { post ->
-                if (post.author.username == username) {
-                    nowFollowing = !post.author.isFollowing
-                    post.copy(author = post.author.copy(isFollowing = nowFollowing))
-                } else post
+                if (post.author.id == targetId) post.copy(author = post.author.copy(isFollowing = nowFollowing)) else post
             }
             val updatedClips = state.clips.map { clip ->
-                if (clip.author.username == username) {
-                    clip.copy(isFollowing = nowFollowing, author = clip.author.copy(isFollowing = nowFollowing))
-                } else clip
+                if (clip.author.id == targetId) clip.copy(isFollowing = nowFollowing, author = clip.author.copy(isFollowing = nowFollowing)) else clip
             }
-            showToast(if (nowFollowing) "Following @$username" else "Unfollowed @$username")
-            state.copy(posts = updatedPosts, clips = updatedClips)
+            val d = if (nowFollowing) 1 else -1
+            state.copy(
+                posts = updatedPosts,
+                clips = updatedClips,
+                currentUser = state.currentUser?.let { cu -> cu.copy(followingCount = maxOf(0, cu.followingCount + d)) }
+            )
         }
+        showToast(if (nowFollowing) "Following @$username" else "Unfollowed @$username")
+        viewModelScope.launch { repository.setFollow(me, targetId, nowFollowing) }
     }
 
     // Moments
@@ -1035,6 +1141,9 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
             }
             state.copy(chats = updatedChats)
         }
+        val otherId = _uiState.value.chats.firstOrNull { it.id == conversationId }?.participant?.id
+            ?: VynoraOfficial.OFFICIAL_USER_ID
+        viewModelScope.launch { repository.sendChatMessage(conversationId, user, otherId, newMessage) }
     }
 
     fun addChatReaction(conversationId: String, messageId: String, emoji: String) {
@@ -1147,6 +1256,8 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun resolveReport(id: String, action: String) {
+        _uiState.update { st -> st.copy(reports = st.reports.map { if (it.id == id) it.copy(status = action) else it }) }
+        viewModelScope.launch { repository.updateReportStatus(id, action) }
         showToast("Report marked as $action")
     }
 
