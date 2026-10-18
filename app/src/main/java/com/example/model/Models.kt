@@ -188,6 +188,13 @@ enum class NotificationType {
     LIKE, COMMENT, FOLLOW, MENTION, BADGE_EXPIRY, SYSTEM
 }
 
+data class SavedAccount(
+    val id: String = "",
+    val username: String = "",
+    val identifier: String = "",
+    val avatarUrl: String = ""
+)
+
 data class NotificationItem(
     val id: String = "",
     val type: NotificationType = NotificationType.SYSTEM,
