@@ -231,12 +231,22 @@ fun VynoraApp(viewModel: VynoraViewModel) {
                                         onLikeToggle = { clipId -> viewModel.toggleLikeClip(clipId) },
                                         onSaveToggle = { clipId -> viewModel.toggleSaveClip(clipId) },
                                         onFollowToggle = { username -> viewModel.toggleFollowCreator(username) },
-                                        onCommentsClick = { clipId ->
-                                            val relatedPost = uiState.posts.firstOrNull()
-                                            if (relatedPost != null) viewModel.openComments(relatedPost.id)
+                                        onCommentsClick = { _ ->
+                                            viewModel.showToast("Reel comments are coming soon")
                                         },
                                         onShareClick = { clip ->
-                                            viewModel.showToast("Clip shared: ${clip.musicTitle}")
+                                            try {
+                                                val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                                    type = "text/plain"
+                                                    putExtra(
+                                                        android.content.Intent.EXTRA_TEXT,
+                                                        "Watch this reel by @${clip.author.username} on VYNORA: ${clip.mediaUrl}"
+                                                    )
+                                                }
+                                                hostContext.startActivity(android.content.Intent.createChooser(send, "Share reel"))
+                                            } catch (e: Exception) {
+                                                viewModel.showToast("Could not open share options")
+                                            }
                                         },
                                         onToast = { msg -> viewModel.showToast(msg) }
                                     )
@@ -336,6 +346,13 @@ fun VynoraApp(viewModel: VynoraViewModel) {
             }
             is ScreenDestination.ChatRoom -> {
                 val conversation = uiState.chats.firstOrNull { it.id == screen.conversationId }
+                    ?: screen.participant?.let { p ->
+                        com.example.model.ChatConversation(
+                            id = screen.conversationId,
+                            participant = p,
+                            lastMessage = com.example.model.ChatMessage(text = "", timestamp = "Now")
+                        )
+                    }
                     ?: uiState.chats.firstOrNull()
                     ?: com.example.model.ChatConversation(
                         id = screen.conversationId.ifEmpty { "chat_${com.example.util.VynoraOfficial.OFFICIAL_USER_ID}" },
@@ -479,6 +496,8 @@ fun VynoraApp(viewModel: VynoraViewModel) {
                     value = viewModel.loadUserProfile(otherId)
                 }
                 var following by remember(otherId) { mutableStateOf(viewModel.isFollowingUser(otherId)) }
+                val theyFollowMe by produceState(initialValue = false, otherId) { value = viewModel.followsMe(otherId) }
+                var muted by remember(otherId) { mutableStateOf(false) }
                 val shown = other
                 if (shown == null) {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -498,9 +517,20 @@ fun VynoraApp(viewModel: VynoraViewModel) {
                         isOwnProfile = false,
                         onOpenFollowList = { tab -> viewModel.openFollowList(shown.id, shown.username, tab) },
                         isFollowing = following,
+                        followsYou = theyFollowMe,
+                        isMuted = muted || viewModel.isMutedUser(shown.username),
                         onFollowClick = {
                             viewModel.toggleFollowById(otherId, shown.username)
                             following = viewModel.isFollowingUser(otherId)
+                        },
+                        onMessageClick = { viewModel.openChatWith(shown) },
+                        onMuteClick = {
+                            viewModel.toggleMuteUser(shown.username)
+                            muted = viewModel.isMutedUser(shown.username)
+                        },
+                        onBlockClick = {
+                            viewModel.blockUser(shown.username)
+                            viewModel.navigateBack()
                         },
                         onBackClick = { viewModel.navigateBack() }
                     )
