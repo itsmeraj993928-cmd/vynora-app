@@ -920,6 +920,14 @@ class VynoraRepository(
         }
     }
 
+    suspend fun getUserAvatar(userId: String): String = loadUserCached(userId).avatarUrl
+
+    suspend fun markNotificationsRead(ids: List<String>) {
+        for (id in ids) {
+            try { db.collection("notifications").document(id).update("isRead", true).await() } catch (e: Exception) { }
+        }
+    }
+
     private suspend fun removeNotification(nid: String) {
         try { db.collection("notifications").document(nid).delete().await() } catch (e: Exception) { }
     }
