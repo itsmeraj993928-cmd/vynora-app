@@ -30,7 +30,8 @@ internal data class NotificationDoc(
     val timeGroup: String = "Today",
     val timestamp: String = "Just now",
     val isRead: Boolean = false,
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    val postId: String = ""
 )
 
 class VynoraRepository(
@@ -549,7 +550,17 @@ class VynoraRepository(
                 val notifs = snapshot?.documents?.mapNotNull { d ->
                     try { d.toObject(NotificationItem::class.java) } catch (e: Exception) { null }
                 } ?: emptyList()
-                trySend(notifs.sortedByDescending { it.createdAt }.take(100))
+                val sorted = notifs.sortedByDescending { it.createdAt }.take(100)
+                this@callbackFlow.launch {
+                    val enriched = sorted.map { n ->
+                        if (n.user.id.isBlank()) n
+                        else {
+                            val full = loadUserCached(n.user.id)
+                            n.copy(user = n.user.copy(avatarUrl = full.avatarUrl.ifBlank { n.user.avatarUrl }))
+                        }
+                    }
+                    trySend(enriched)
+                }
             }
         awaitClose { listener.remove() }
     }
@@ -595,7 +606,8 @@ class VynoraRepository(
                             recipientId = authorId,
                             type = NotificationType.LIKE,
                             user = smallUser,
-                            contentPreview = preview
+                            contentPreview = preview,
+                            postId = postId
                         )
                     ).await()
                 } else {
@@ -890,7 +902,7 @@ class VynoraRepository(
         photoBase64 = ""
     )
 
-    private suspend fun writeNotification(nid: String, recipientId: String, type: NotificationType, me: User, preview: String?) {
+    private suspend fun writeNotification(nid: String, recipientId: String, type: NotificationType, me: User, preview: String?, postId: String = "") {
         try {
             if (recipientId.isBlank() || recipientId == me.id) return
             db.collection("notifications").document(nid).set(
@@ -899,7 +911,8 @@ class VynoraRepository(
                     recipientId = recipientId,
                     type = type,
                     user = slimUser(me),
-                    contentPreview = preview
+                    contentPreview = preview,
+                    postId = postId
                 )
             ).await()
         } catch (e: Exception) {
@@ -967,7 +980,7 @@ class VynoraRepository(
         } catch (e: Exception) {
             Log.w("VynoraRepo", "saveComment failed", e)
         }
-        writeNotification("comment_${comment.id}", postAuthorId, NotificationType.COMMENT, comment.author, comment.text.take(60))
+        writeNotification("comment_${comment.id}", postAuthorId, NotificationType.COMMENT, comment.author, comment.text.take(60), postId)
     }
 
     suspend fun sendChatMessage(conversationId: String, me: User, otherId: String, msg: ChatMessage) {
