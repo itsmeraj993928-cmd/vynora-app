@@ -34,8 +34,8 @@ object CloudinaryUploader {
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(60, TimeUnit.SECONDS)
-        .writeTimeout(120, TimeUnit.SECONDS)
-        .readTimeout(60, TimeUnit.SECONDS)
+        .writeTimeout(180, TimeUnit.SECONDS)
+        .readTimeout(180, TimeUnit.SECONDS)
         .retryOnConnectionFailure(true)
         .build()
 
@@ -69,7 +69,6 @@ object CloudinaryUploader {
                         var read: Int
                         while (input.read(buffer).also { read = it } != -1) {
                             sink.write(buffer, 0, read)
-                            sink.flush()
                             written += read
                             val progress = if (total > 0) ((written * 100) / total).toInt() else 0
                             onProgress(progress.coerceIn(0, 99))
@@ -134,32 +133,99 @@ object CloudinaryUploader {
 
     /**
      * Uploads media directly from an Android content Uri (e.g. from photo picker).
+     * The file is streamed from disk in 64 KB blocks, so large videos are not loaded
+     * into memory and the upload starts immediately.
      */
     suspend fun uploadUri(
         context: Context,
         uri: Uri,
+        maxRetries: Int = 2,
         onProgress: (Int) -> Unit = {}
     ): Result<CloudinaryUploadResult> = withContext(Dispatchers.IO) {
-        try {
-            val contentResolver = context.contentResolver
-            val mimeType = contentResolver.getType(uri) ?: "image/jpeg"
-            val inputStream = contentResolver.openInputStream(uri)
-                ?: return@withContext Result.failure(IOException("Cannot open input stream for $uri"))
+        val resolver = context.contentResolver
+        val mimeType = try { resolver.getType(uri) } catch (e: Exception) { null } ?: "image/jpeg"
+        val isVideo = mimeType.contains("video")
+        val total: Long = try {
+            resolver.openAssetFileDescriptor(uri, "r")?.use { it.length } ?: -1L
+        } catch (e: Exception) { -1L }
+        val filename = "upload_${System.currentTimeMillis()}." + (if (isVideo) "mp4" else "jpg")
+        val mediaType = mimeType.toMediaTypeOrNull()
 
-            val bytes = inputStream.use { it.readBytes() }
-            val extension = if (mimeType.contains("video")) "mp4" else "jpg"
-            val filename = "upload_${System.currentTimeMillis()}.$extension"
+        var attempt = 0
+        var lastException: Exception? = null
+        while (attempt <= maxRetries) {
+            attempt++
+            try {
+                val streamBody = object : RequestBody() {
+                    override fun contentType(): MediaType? = mediaType
+                    override fun contentLength(): Long = total
+                    override fun writeTo(sink: BufferedSink) {
+                        val input = resolver.openInputStream(uri)
+                            ?: throw IOException("Cannot open input stream for $uri")
+                        input.use { stream ->
+                            val buffer = ByteArray(64 * 1024)
+                            var written = 0L
+                            var lastPercent = -1
+                            var read: Int
+                            while (stream.read(buffer).also { read = it } != -1) {
+                                sink.write(buffer, 0, read)
+                                written += read
+                                if (total > 0) {
+                                    val percent = ((written * 100) / total).toInt().coerceIn(0, 99)
+                                    if (percent != lastPercent) {
+                                        lastPercent = percent
+                                        onProgress(percent)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
 
-            uploadBytes(
-                bytes = bytes,
-                mimeType = mimeType,
-                filename = filename,
-                onProgress = onProgress
-            )
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed reading URI for Cloudinary upload: ${e.message}", e)
-            Result.failure(e)
+                val multipartBody = MultipartBody.Builder()
+                    .setType(MultipartBody.FORM)
+                    .addFormDataPart("upload_preset", CloudinaryConfig.UPLOAD_PRESET)
+                    .addFormDataPart("file", filename, streamBody)
+                    .build()
+
+                val request = Request.Builder()
+                    .url(CloudinaryConfig.UPLOAD_URL)
+                    .post(multipartBody)
+                    .build()
+
+                val response = client.newCall(request).execute()
+                val responseBody = response.use { it.body?.string() ?: "" }
+
+                if (!response.isSuccessful) {
+                    Log.e(TAG, "Cloudinary upload attempt $attempt failed HTTP ${response.code}: $responseBody")
+                    if (attempt <= maxRetries) continue
+                    return@withContext Result.failure(
+                        IOException("Upload failed (${response.code}): $responseBody")
+                    )
+                }
+
+                val json = JSONObject(responseBody)
+                onProgress(100)
+                return@withContext Result.success(
+                    CloudinaryUploadResult(
+                        secureUrl = json.getString("secure_url"),
+                        publicId = json.optString("public_id", ""),
+                        format = json.optString("format", ""),
+                        width = json.optInt("width", 0),
+                        height = json.optInt("height", 0),
+                        bytes = json.optLong("bytes", if (total > 0) total else 0L),
+                        resourceType = json.optString("resource_type", if (isVideo) "video" else "image")
+                    )
+                )
+            } catch (e: Exception) {
+                lastException = e
+                Log.w(TAG, "Cloudinary upload attempt $attempt error: ${e.message}")
+                if (attempt > maxRetries) {
+                    return@withContext Result.failure(e)
+                }
+            }
         }
+        Result.failure(lastException ?: IOException("Upload failed after $maxRetries retries"))
     }
 
     /**
