@@ -191,7 +191,12 @@ fun VynoraApp(viewModel: VynoraViewModel) {
                                     ExploreScreen(
                                         posts = uiState.posts,
                                         isDarkMode = uiState.isDarkMode,
-                                        onUserClick = { viewModel.selectTab(MainTab.PROFILE) },
+                                        onUserClick = { uid, uname ->
+                        if (uid.isNotBlank()) viewModel.openUserProfile(uid)
+                        else viewModel.openUserProfileByUsername(uname)
+                    },
+                    onFollowBack = { uid, uname -> viewModel.toggleFollowById(uid, uname) },
+                    isFollowing = { uid -> viewModel.isFollowingUser(uid) },
                                         onFollowToggle = { username -> viewModel.toggleFollowCreator(username) },
                                         onPostClick = { post -> viewModel.openComments(post.id) }
                                     )
