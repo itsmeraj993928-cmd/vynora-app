@@ -51,6 +51,7 @@ fun CreateStudioScreen(
     onPublishPost: (caption: String, hashtags: List<String>, mediaUrls: List<String>, location: String?, filterName: String?, visibility: String) -> Unit,
     onPublishMoment: (textOverlay: String, mediaUrl: String, musicTrack: String?, isCloseFriends: Boolean, visibility: String) -> Unit,
     onPublishClip: (caption: String, mediaUrl: String, musicTitle: String, visibility: String) -> Unit = { _, _, _, _ -> },
+    onStartBackgroundUpload: (kind: String, uri: Uri, caption: String, hashtags: List<String>, location: String?, filter: String?, visibility: String, music: String, closeFriends: Boolean) -> Unit = { _, _, _, _, _, _, _, _, _ -> },
     onRequestAiCaption: (topic: String, onResult: (String) -> Unit) -> Unit,
     onRequestAiHashtags: (topic: String, onResult: (List<String>) -> Unit) -> Unit,
     onToast: (String) -> Unit,
@@ -78,6 +79,7 @@ fun CreateStudioScreen(
     var isUploading by remember { mutableStateOf(false) }
     var uploadProgress by remember { mutableStateOf(0) }
     var uploadError by remember { mutableStateOf<String?>(null) }
+    var selectedSizeMb by remember { mutableStateOf(0f) }
 
     fun startUpload(uri: Uri) {
         selectedMediaUri = uri
@@ -126,7 +128,23 @@ fun CreateStudioScreen(
                     blocked = true
                 }
             }
-            if (!blocked) startUpload(uri)
+            var sizeBytes = 0L
+            if (!blocked) {
+                sizeBytes = try {
+                    context.contentResolver.openAssetFileDescriptor(uri, "r")?.use { it.length } ?: 0L
+                } catch (e: Exception) { 0L }
+                if (sizeBytes > 100L * 1024L * 1024L) {
+                    onToast("File is too large. Maximum size is 100 MB")
+                    blocked = true
+                }
+            }
+            if (!blocked) {
+                selectedMediaUri = uri
+                uploadedSecureUrl = null
+                uploadedPublicId = null
+                uploadError = null
+                selectedSizeMb = if (sizeBytes > 0L) sizeBytes / 1048576f else 0f
+            }
         }
     }
 
@@ -273,6 +291,17 @@ fun CreateStudioScreen(
                     )
                 }
             }
+        }
+
+        if (selectedMediaUri != null && selectedSizeMb > 0f) {
+            Spacer(modifier = Modifier.height(10.dp))
+            Text(
+                text = "This " + (if (mode == CreateMode.CLIP) "reel" else "upload") +
+                    " will use about " + String.format("%.1f", selectedSizeMb) +
+                    " MB of data. It uploads in the background, so you can keep using the app.",
+                fontSize = 12.sp,
+                color = Color(0xFF94A3B8)
+            )
         }
 
         // --- Upload Progress Bar & Error Retry UI ---
@@ -500,13 +529,9 @@ fun CreateStudioScreen(
         // --- 5. Publish / Share CTA Button ---
         Button(
             onClick = {
-                val mediaUrl = uploadedSecureUrl
-                if (mediaUrl.isNullOrBlank()) {
-                    if (isUploading) {
-                        onToast("Please wait for media upload to finish ⏳")
-                    } else {
-                        onToast("Please select a photo or video to share! 📸")
-                    }
+                val pickedUri = selectedMediaUri
+                if (pickedUri == null) {
+                    onToast("Please select a photo or video to share! 📸")
                     return@Button
                 }
 
@@ -515,31 +540,28 @@ fun CreateStudioScreen(
                     return@Button
                 }
 
-                if (mode == CreateMode.MOMENT) {
-                    onPublishMoment(
-                        caption.ifBlank { "Late night vibes ✨" },
-                        mediaUrl,
-                        selectedMusicTrack,
-                        isCloseFriends,
-                        visibility
-                    )
-                } else if (mode == CreateMode.CLIP) {
-                    onPublishClip(
-                        caption.ifBlank { "VYNORA Clip ✨" },
-                        mediaUrl,
-                        selectedMusicTrack,
-                        visibility
-                    )
-                } else {
-                    onPublishPost(
-                        caption.ifBlank { "Sharing my world with @VYNORA ✨" },
-                        listOf("#VynoraVibes", "#ShareYourWorld"),
-                        listOf(mediaUrl),
-                        location.ifBlank { null },
-                        selectedFilter,
-                        visibility
-                    )
+                val kindName = when (mode) {
+                    CreateMode.MOMENT -> "MOMENT"
+                    CreateMode.CLIP -> "CLIP"
+                    else -> "POST"
                 }
+                val finalCaption = caption.trim()
+                val finalTags = Regex("#[\\p{L}\\p{N}_]+").findAll(finalCaption).map { it.value }.distinct().toList()
+                onStartBackgroundUpload(
+                    kindName,
+                    pickedUri,
+                    finalCaption,
+                    finalTags,
+                    location.ifBlank { null },
+                    selectedFilter,
+                    visibility,
+                    selectedMusicTrack,
+                    isCloseFriends
+                )
+                selectedMediaUri = null
+                selectedSizeMb = 0f
+                caption = ""
+                onToast("Upload started. You can keep using the app.")
             },
             enabled = !isUploading,
             modifier = Modifier
