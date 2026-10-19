@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
@@ -65,6 +66,10 @@ fun ProfileScreen(
     savedAccounts: List<com.example.model.SavedAccount> = emptyList(),
     onSwitchAccount: (String) -> Unit = {},
     onAddAccount: () -> Unit = {},
+    isOwnProfile: Boolean = true,
+    isFollowing: Boolean = false,
+    onFollowClick: () -> Unit = {},
+    onBackClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -131,10 +136,19 @@ fun ProfileScreen(
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Row(
-                modifier = Modifier.clickable { showAccountSwitcher = true },
+                modifier = if (isOwnProfile) Modifier.clickable { showAccountSwitcher = true } else Modifier,
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
+                if (!isOwnProfile) {
+                    IconButton(onClick = onBackClick) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back",
+                            tint = if (isDarkMode) Color.White else Color(0xFF0F172A)
+                        )
+                    }
+                }
                 Text(
                     text = user.username,
                     fontWeight = FontWeight.ExtraBold,
@@ -146,14 +160,17 @@ fun ProfileScreen(
                 } else if (user.isPlusActive) {
                     VynoraPlusBadge(size = 18.dp)
                 }
-                Icon(
-                    imageVector = Icons.Outlined.ArrowDropDown,
-                    contentDescription = "Switch account",
-                    tint = if (isDarkMode) Color.White else Color(0xFF0F172A)
-                )
+                if (isOwnProfile) {
+                    Icon(
+                        imageVector = Icons.Outlined.ArrowDropDown,
+                        contentDescription = "Switch account",
+                        tint = if (isDarkMode) Color.White else Color(0xFF0F172A)
+                    )
+                }
             }
 
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+              if (isOwnProfile) {
                 // Creator Studio
                 IconButton(onClick = onOpenCreatorStudio) {
                     Icon(
@@ -182,6 +199,7 @@ fun ProfileScreen(
                         tint = if (isDarkMode) Color.White else Color(0xFF0F172A)
                     )
                 }
+              }
             }
         }
 
@@ -202,7 +220,7 @@ fun ProfileScreen(
                             avatarUrl = user.avatarUrl,
                             hasStory = false,
                             size = 80.dp,
-                            onClick = { if (user.avatarUrl.isBlank()) onOpenEditProfile() }
+                            onClick = { if (isOwnProfile && user.avatarUrl.isBlank()) onOpenEditProfile() }
                         )
 
                         // Stats (Posts, Followers, Following)
@@ -344,8 +362,24 @@ fun ProfileScreen(
 
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    // Action Buttons (Edit Profile, Share QR)
-                    Row(
+                    // Action Buttons (Edit Profile, Share QR) / Follow for other people
+                    if (!isOwnProfile) {
+                        Button(
+                            onClick = onFollowClick,
+                            modifier = Modifier.fillMaxWidth().height(40.dp),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (isFollowing) (if (isDarkMode) Color(0xFF1E2235) else Color(0xFFE2E8F0)) else VynoraNeonPink
+                            )
+                        ) {
+                            Text(
+                                text = if (isFollowing) "Following" else "Follow",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp,
+                                color = if (isFollowing) (if (isDarkMode) Color.White else Color(0xFF0F172A)) else Color.White
+                            )
+                        }
+                    } else Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
@@ -415,8 +449,8 @@ fun ProfileScreen(
                         horizontalArrangement = Arrangement.spacedBy(14.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // "+ New" Highlight Button
-                        item {
+                        // "+ New" Highlight Button (only on my own profile)
+                        if (isOwnProfile) item {
                             Column(
                                 horizontalAlignment = Alignment.CenterHorizontally,
                                 modifier = Modifier

@@ -3,6 +3,7 @@ package com.example.screens
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -61,7 +62,8 @@ fun HomeScreen(
     onReportClick: (type: String, id: String, username: String) -> Unit,
     onAuthorClick: (String) -> Unit,
     modifier: Modifier = Modifier,
-    onDeletePost: (String) -> Unit = {}
+    onDeletePost: (String) -> Unit = {},
+    onFollowAuthor: (id: String, username: String) -> Unit = { _, _ -> }
 ) {
     var postToDelete by remember { mutableStateOf<String?>(null) }
     if (postToDelete != null) {
@@ -220,6 +222,7 @@ fun HomeScreen(
             } else {
                 items(posts, key = { it.id }) { post ->
                     Column {
+                        Box {
                         PostCard(
                             post = post,
                             isDarkMode = isDarkMode,
@@ -232,6 +235,28 @@ fun HomeScreen(
                             onAuthorClick = { onAuthorClick(post.author.username) },
                             modifier = Modifier.padding(horizontal = 14.dp)
                         )
+                        if (post.author.id.isNotBlank() && post.author.id != currentUser.id && !post.author.isOfficial) {
+                            val following = post.author.isFollowing
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = if (following) Color(0x331E2235) else VynoraNeonPink,
+                                border = if (following) BorderStroke(1.dp, Color(0x6694A3B8)) else null,
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .padding(top = 22.dp, end = 52.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .clickable { onFollowAuthor(post.author.id, post.author.username) }
+                            ) {
+                                Text(
+                                    text = if (following) "Following" else "Follow",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White,
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                                )
+                            }
+                        }
+                        }
                         if (currentUser.id.isNotBlank() && post.author.id == currentUser.id) {
                             TextButton(
                                 onClick = { postToDelete = post.id },
