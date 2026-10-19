@@ -708,10 +708,11 @@ class VynoraRepository(
 
     suspend fun getUsersByIds(ids: List<String>): List<User> {
         val list = ids.distinct().take(300)
-        return kotlinx.coroutines.coroutineScope {
-            list.map { id -> kotlinx.coroutines.async { loadUserCached(id) } }
-                .let { jobs -> kotlinx.coroutines.awaitAll(*jobs.toTypedArray()) }
+        val result = ArrayList<User>()
+        for (id in list) {
+            result.add(loadUserCached(id))
         }
+        return result
     }
 
     suspend fun savePost(post: Post) {
