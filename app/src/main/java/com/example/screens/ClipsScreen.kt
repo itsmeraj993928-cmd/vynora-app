@@ -21,6 +21,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.graphicsLayer
+import kotlinx.coroutines.delay
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
@@ -165,6 +167,15 @@ private fun ClipItemView(
     onDelete: () -> Unit
 ) {
     var isPlaying by remember { mutableStateOf(true) }
+    var heartVisible by remember { mutableStateOf(false) }
+    LaunchedEffect(heartVisible) {
+        if (heartVisible) {
+            delay(700)
+            heartVisible = false
+        }
+    }
+    val heartAlpha by animateFloatAsState(if (heartVisible) 1f else 0f, tween(250), label = "heart_alpha")
+    val heartScale by animateFloatAsState(if (heartVisible) 1.2f else 0.5f, spring(), label = "heart_scale")
     var showDeleteConfirm by remember { mutableStateOf(false) }
 
     if (showDeleteConfirm) {
@@ -200,7 +211,11 @@ private fun ClipItemView(
             .fillMaxSize()
             .pointerInput(Unit) {
                 detectTapGestures(
-                    onTap = { isPlaying = !isPlaying }
+                    onTap = { isPlaying = !isPlaying },
+                    onDoubleTap = {
+                        if (!clip.isLiked) onLikeToggle()
+                        heartVisible = true
+                    }
                 )
             }
     ) {
@@ -228,6 +243,23 @@ private fun ClipItemView(
                     )
                 )
         )
+
+        // Double-tap heart
+        if (heartAlpha > 0.01f) {
+            Icon(
+                imageVector = Icons.Filled.Favorite,
+                contentDescription = null,
+                tint = VynoraNeonPink,
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .size(110.dp)
+                    .graphicsLayer {
+                        alpha = heartAlpha
+                        scaleX = heartScale
+                        scaleY = heartScale
+                    }
+            )
+        }
 
         // Play/Pause Center Indicator
         if (!isPlaying) {

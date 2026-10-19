@@ -70,6 +70,11 @@ fun ProfileScreen(
     isOwnProfile: Boolean = true,
     isFollowing: Boolean = false,
     onFollowClick: () -> Unit = {},
+    followsYou: Boolean = false,
+    isMuted: Boolean = false,
+    onMessageClick: () -> Unit = {},
+    onMuteClick: () -> Unit = {},
+    onBlockClick: () -> Unit = {},
     onBackClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
@@ -79,6 +84,7 @@ fun ProfileScreen(
 
     var selectedTab by remember { mutableStateOf(0) } // 0: Posts, 1: Clips, 2: Tagged, 3: Saved
     var showQrDialog by remember { mutableStateOf(false) }
+    var showFollowOptions by remember { mutableStateOf(false) }
     var showEditProfileSheet by remember { mutableStateOf(false) }
 
     // Highlights Creation State
@@ -365,19 +371,58 @@ fun ProfileScreen(
 
                     // Action Buttons (Edit Profile, Share QR) / Follow for other people
                     if (!isOwnProfile) {
-                        Button(
-                            onClick = onFollowClick,
-                            modifier = Modifier.fillMaxWidth().height(40.dp),
-                            shape = RoundedCornerShape(12.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = if (isFollowing) (if (isDarkMode) Color(0xFF1E2235) else Color(0xFFE2E8F0)) else VynoraNeonPink
-                            )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
-                            Text(
-                                text = if (isFollowing) "Following" else "Follow",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 14.sp,
-                                color = if (isFollowing) (if (isDarkMode) Color.White else Color(0xFF0F172A)) else Color.White
+                            Button(
+                                onClick = { if (isFollowing) showFollowOptions = true else onFollowClick() },
+                                modifier = Modifier.weight(1f).height(40.dp),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (isFollowing) (if (isDarkMode) Color(0xFF1E2235) else Color(0xFFE2E8F0)) else VynoraNeonPink
+                                )
+                            ) {
+                                Text(
+                                    text = if (isFollowing) "Following" else if (followsYou) "Follow Back" else "Follow",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp,
+                                    color = if (isFollowing) (if (isDarkMode) Color.White else Color(0xFF0F172A)) else Color.White
+                                )
+                                if (isFollowing) {
+                                    Icon(
+                                        imageVector = Icons.Filled.KeyboardArrowDown,
+                                        contentDescription = null,
+                                        tint = if (isDarkMode) Color.White else Color(0xFF0F172A),
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+                            Button(
+                                onClick = onMessageClick,
+                                modifier = Modifier.weight(1f).height(40.dp),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (isDarkMode) Color(0xFF1E2235) else Color(0xFFE2E8F0)
+                                )
+                            ) {
+                                Text(
+                                    text = "Message",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp,
+                                    color = if (isDarkMode) Color.White else Color(0xFF0F172A)
+                                )
+                            }
+                        }
+                        if (showFollowOptions) {
+                            FollowOptionsSheet(
+                                username = user.username,
+                                isDarkMode = isDarkMode,
+                                isMuted = isMuted,
+                                onDismiss = { showFollowOptions = false },
+                                onMute = { showFollowOptions = false; onMuteClick() },
+                                onUnfollow = { showFollowOptions = false; onFollowClick() },
+                                onBlock = { showFollowOptions = false; onBlockClick() }
                             )
                         }
                     } else Row(
@@ -1029,5 +1074,54 @@ private fun ProfileStatItem(label: String, count: String, isDarkMode: Boolean, o
             fontSize = 12.sp,
             color = if (isDarkMode) Color(0xFF94A3B8) else Color(0xFF64748B)
         )
+    }
+}
+
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun FollowOptionsSheet(
+    username: String,
+    isDarkMode: Boolean,
+    isMuted: Boolean,
+    onDismiss: () -> Unit,
+    onMute: () -> Unit,
+    onUnfollow: () -> Unit,
+    onBlock: () -> Unit
+) {
+    val textColor = if (isDarkMode) Color.White else Color(0xFF0F172A)
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = if (isDarkMode) Color(0xFF0F121E) else Color.White
+    ) {
+        Column(modifier = Modifier.fillMaxWidth().padding(bottom = 24.dp)) {
+            Text(
+                text = username,
+                fontWeight = FontWeight.Bold,
+                fontSize = 16.sp,
+                color = textColor,
+                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+            )
+            HorizontalDivider(color = if (isDarkMode) Color(0x22FFFFFF) else Color(0x1F000000))
+            Text(
+                text = if (isMuted) "Unmute posts and reels" else "Mute posts and reels",
+                fontSize = 15.sp,
+                color = textColor,
+                modifier = Modifier.fillMaxWidth().clickable(onClick = onMute).padding(horizontal = 20.dp, vertical = 16.dp)
+            )
+            Text(
+                text = "Unfollow",
+                fontSize = 15.sp,
+                color = Color(0xFFEF4444),
+                modifier = Modifier.fillMaxWidth().clickable(onClick = onUnfollow).padding(horizontal = 20.dp, vertical = 16.dp)
+            )
+            Text(
+                text = "Block",
+                fontSize = 15.sp,
+                color = Color(0xFFEF4444),
+                modifier = Modifier.fillMaxWidth().clickable(onClick = onBlock).padding(horizontal = 20.dp, vertical = 16.dp)
+            )
+        }
     }
 }
