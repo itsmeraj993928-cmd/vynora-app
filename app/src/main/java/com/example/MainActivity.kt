@@ -191,12 +191,7 @@ fun VynoraApp(viewModel: VynoraViewModel) {
                                     ExploreScreen(
                                         posts = uiState.posts,
                                         isDarkMode = uiState.isDarkMode,
-                                        onUserClick = { uid, uname ->
-                        if (uid.isNotBlank()) viewModel.openUserProfile(uid)
-                        else viewModel.openUserProfileByUsername(uname)
-                    },
-                    onFollowBack = { uid, uname -> viewModel.toggleFollowById(uid, uname) },
-                    isFollowing = { uid -> viewModel.isFollowingUser(uid) },
+                                        onUserClick = { username -> viewModel.openUserProfileByUsername(username) },
                                         onFollowToggle = { username -> viewModel.toggleFollowCreator(username) },
                                         onPostClick = { post -> viewModel.openComments(post.id) }
                                     )
@@ -319,7 +314,12 @@ fun VynoraApp(viewModel: VynoraViewModel) {
                     isDarkMode = uiState.isDarkMode,
                     onMarkAllAsRead = { viewModel.markAllNotificationsRead() },
                     onBack = { viewModel.navigateBack() },
-                    onUserClick = { viewModel.selectTab(MainTab.PROFILE) }
+                    onUserClick = { uid, uname ->
+                        if (uid.isNotBlank()) viewModel.openUserProfile(uid)
+                        else viewModel.openUserProfileByUsername(uname)
+                    },
+                    onFollowBack = { uid, uname -> viewModel.toggleFollowById(uid, uname) },
+                    isFollowing = { uid -> viewModel.isFollowingUser(uid) }
                 )
             }
             is ScreenDestination.LiveStudio -> {
