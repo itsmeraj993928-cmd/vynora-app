@@ -36,7 +36,7 @@ sealed class ScreenDestination {
     data class Main(val tab: MainTab = MainTab.HOME) : ScreenDestination()
     data class MomentsViewer(val initialMomentIndex: Int = 0) : ScreenDestination()
     object ChatsList : ScreenDestination()
-    data class ChatRoom(val conversationId: String) : ScreenDestination()
+    data class ChatRoom(val conversationId: String, val participant: User? = null) : ScreenDestination()
     object Notifications : ScreenDestination()
     object LiveStudio : ScreenDestination()
     object CreatorAnalytics : ScreenDestination()
@@ -157,6 +157,9 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
     private var likedClipIds: Set<String> = emptySet()
 
     private fun blockedPrefs() = getApplication<Application>().getSharedPreferences("vynora_blocked", android.content.Context.MODE_PRIVATE)
+    private fun mutedPrefs() = getApplication<Application>().getSharedPreferences("vynora_muted", android.content.Context.MODE_PRIVATE)
+    private fun mutedNames(): Set<String> = try { mutedPrefs().getStringSet("names", emptySet()) ?: emptySet() } catch (e: Exception) { emptySet() }
+    private val pendingChatParticipants = HashMap<String, User>()
     private fun blockedNames(): Set<String> = try { blockedPrefs().getStringSet("names", emptySet()) ?: emptySet() } catch (e: Exception) { emptySet() }
 
     private fun startDataObservations(userId: String) {
@@ -167,7 +170,7 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
             followingIds = repository.getFollowingIds(userId)
             launch {
                 repository.observePosts().collect { postsList ->
-                    val blocked = blockedNames()
+                    val blocked = blockedNames() + mutedNames()
                     val visible = postsList
                         .filter { isVisibleTo(it.visibility, it.author.id, userId) && it.author.username !in blocked }
                         .map {
@@ -194,7 +197,7 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
             }
             launch {
                 repository.observeClips().collect { clipsList ->
-                    val blocked = blockedNames()
+                    val blocked = blockedNames() + mutedNames()
                     val visible = clipsList
                         .filter { isVisibleTo(it.visibility, it.author.id, userId) && it.author.username !in blocked }
                         .map {
@@ -903,6 +906,39 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
         showToast("Report submitted to moderation team. Thank you for keeping VYNORA safe.")
     }
 
+    fun isMutedUser(username: String): Boolean = username in mutedNames()
+
+    fun toggleMuteUser(username: String) {
+        val names = mutedNames()
+        val nowMuted = username !in names
+        try {
+            mutedPrefs().edit().putStringSet("names", if (nowMuted) names + username else names - username).apply()
+        } catch (e: Exception) { }
+        if (nowMuted) {
+            _uiState.update { state ->
+                state.copy(
+                    posts = state.posts.filterNot { it.author.username == username },
+                    clips = state.clips.filterNot { it.author.username == username }
+                )
+            }
+        }
+        showToast(if (nowMuted) "Muted @$username. Their posts and reels are hidden from your feed." else "Unmuted @$username. Their posts will show again after you reopen the app.")
+    }
+
+    suspend fun followsMe(userId: String): Boolean {
+        val me = _uiState.value.currentUser ?: return false
+        return try { userId in repository.getFollowerIds(me.id) } catch (e: Exception) { false }
+    }
+
+    fun openChatWith(target: User) {
+        val me = _uiState.value.currentUser ?: return
+        if (target.id.isBlank() || target.id == me.id) return
+        val existing = _uiState.value.chats.firstOrNull { it.participant.id == target.id }
+        val convId = existing?.id ?: if (me.id < target.id) "${me.id}_${target.id}" else "${target.id}_${me.id}"
+        pendingChatParticipants[convId] = target
+        navigateTo(ScreenDestination.ChatRoom(convId, target))
+    }
+
     fun blockUser(username: String) {
         if (VynoraOfficial.isOfficialAccount(null, username)) {
             showToast("The official VYNORA account cannot be blocked.")
@@ -1289,7 +1325,7 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
             } else {
                 state.chats + ChatConversation(
                     id = conversationId,
-                    participant = VynoraOfficial.createOfficialUser(),
+                    participant = pendingChatParticipants[conversationId] ?: VynoraOfficial.createOfficialUser(),
                     messages = listOf(newMessage),
                     lastMessage = newMessage
                 )
