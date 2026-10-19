@@ -984,10 +984,6 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
         repository.getUsersByIds(repository.getFollowingIds(userId).toList())
 
     fun toggleFollowById(targetId: String, username: String) {
-        if (VynoraOfficial.isOfficialAccount(null, username)) {
-            showToast("You cannot unfollow the official VYNORA account.")
-            return
-        }
         val me = _uiState.value.currentUser ?: return
         if (targetId.isBlank() || targetId == me.id) return
         val nowFollowing = targetId !in followingIds
@@ -1006,10 +1002,6 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
 
     fun toggleFollowCreator(username: String) {
         // Rule: Official account cannot be unfollowed
-        if (VynoraOfficial.isOfficialAccount(null, username)) {
-            showToast("You cannot unfollow the official VYNORA account.")
-            return
-        }
         val me = _uiState.value.currentUser ?: return
         val targetId = _uiState.value.posts.firstOrNull { it.author.username == username }?.author?.id
             ?: _uiState.value.clips.firstOrNull { it.author.username == username }?.author?.id
