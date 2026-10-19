@@ -34,7 +34,9 @@ fun NotificationsScreen(
     isDarkMode: Boolean,
     onMarkAllAsRead: () -> Unit,
     onBack: () -> Unit,
-    onUserClick: (String) -> Unit,
+    onUserClick: (String, String) -> Unit,
+    onFollowBack: (String, String) -> Unit = { _, _ -> },
+    isFollowing: (String) -> Boolean = { false },
     modifier: Modifier = Modifier
 ) {
     var selectedFilter by remember { mutableStateOf("All") }
@@ -178,7 +180,9 @@ fun NotificationsScreen(
                             NotificationRow(
                                 item = item,
                                 isDarkMode = isDarkMode,
-                                onUserClick = { onUserClick(item.user.username) }
+                                onUserClick = { onUserClick(item.user.id, item.user.username) },
+                                onFollowBack = { onFollowBack(item.user.id, item.user.username) },
+                                alreadyFollowing = isFollowing(item.user.id)
                             )
                         }
                     }
@@ -192,9 +196,11 @@ fun NotificationsScreen(
 private fun NotificationRow(
     item: NotificationItem,
     isDarkMode: Boolean,
-    onUserClick: () -> Unit
+    onUserClick: () -> Unit,
+    onFollowBack: () -> Unit,
+    alreadyFollowing: Boolean
 ) {
-    var isFollowingBack by remember { mutableStateOf(false) }
+    var isFollowingBack by remember(item.id, alreadyFollowing) { mutableStateOf(alreadyFollowing) }
 
     Row(
         modifier = Modifier
@@ -211,10 +217,9 @@ private fun NotificationRow(
                     .size(46.dp)
                     .clip(CircleShape)
             ) {
-                AsyncImage(
-                    model = item.user.avatarUrl,
-                    contentDescription = item.user.username,
-                    modifier = Modifier.fillMaxSize()
+                com.example.components.StoryRingAvatar(
+                    avatarUrl = item.user.avatarUrl,
+                    size = 46.dp
                 )
             }
 
@@ -251,7 +256,10 @@ private fun NotificationRow(
                 text = buildString {
                     append(item.user.username)
                     append(" ")
-                    append(item.contentPreview ?: "")
+                    val preview = item.contentPreview ?: ""
+                    if (item.type == NotificationType.FOLLOW && preview.isBlank()) append("started following you")
+                    else if (item.type == NotificationType.LIKE && preview.isBlank()) append("liked your post")
+                    else append(preview)
                 },
                 fontSize = 13.sp,
                 lineHeight = 17.sp,
@@ -268,7 +276,7 @@ private fun NotificationRow(
         // Follow back button if FOLLOW type
         if (item.type == NotificationType.FOLLOW) {
             Button(
-                onClick = { isFollowingBack = !isFollowingBack },
+                onClick = { isFollowingBack = !isFollowingBack; onFollowBack() },
                 shape = RoundedCornerShape(12.dp),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = if (isFollowingBack) Color.Gray.copy(alpha = 0.4f) else VynoraNeonCyan
