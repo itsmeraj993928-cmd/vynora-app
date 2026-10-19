@@ -272,7 +272,7 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
             onSuccess = { },
             onError = {
                 prefillIdentifier = identifier
-                showToast("Login nahi hua, password dobara dalo")
+                showToast("Could not log in. Please enter your password again")
             }
         )
     }
