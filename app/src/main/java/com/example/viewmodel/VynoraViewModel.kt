@@ -46,6 +46,7 @@ sealed class ScreenDestination {
     object EditProfile : ScreenDestination()
     data class Legal(val docType: String) : ScreenDestination()
     data class UserProfile(val userId: String) : ScreenDestination()
+    data class FollowList(val userId: String, val username: String, val tab: Int) : ScreenDestination()
 }
 
 enum class MainTab {
@@ -256,9 +257,24 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
         } catch (e: Exception) { }
     }
 
-    fun switchAccount(identifier: String) {
-        prefillIdentifier = identifier
+    fun switchAccount(accountId: String, identifier: String) {
+        val cred = com.example.util.CredentialVault.get(getApplication(), accountId)
+        if (cred == null) {
+            // no saved login for this account: go to login screen with the id filled in
+            prefillIdentifier = identifier
+            signOut()
+            return
+        }
         signOut()
+        signInWithEmail(
+            email = cred.first,
+            pass = cred.second,
+            onSuccess = { },
+            onError = {
+                prefillIdentifier = identifier
+                showToast("Login nahi hua, password dobara dalo")
+            }
+        )
     }
 
     fun addAccount() {
@@ -464,6 +480,7 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
                 is AuthResult.Success -> {
                     val user = result.user
                     val profile = repository.ensureUserProfile(user, _uiState.value.deviceId)
+                    com.example.util.CredentialVault.save(getApplication(), user.uid, email.trim(), pass)
                     _uiState.update {
                         it.copy(
                             isLoggedIn = true,
@@ -531,6 +548,7 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
                     )
                     if (regResult.isSuccess) {
                         val profile = regResult.getOrThrow()
+                        com.example.util.CredentialVault.save(getApplication(), user.uid, cleanEmail, pass)
                         _uiState.update {
                             it.copy(
                                 isLoggedIn = true,
@@ -954,6 +972,16 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun isFollowingUser(userId: String): Boolean = userId in followingIds
+
+    fun openFollowList(userId: String, username: String, tab: Int) {
+        navigateTo(ScreenDestination.FollowList(userId, username, tab))
+    }
+
+    suspend fun loadFollowers(userId: String): List<User> =
+        repository.getUsersByIds(repository.getFollowerIds(userId))
+
+    suspend fun loadFollowing(userId: String): List<User> =
+        repository.getUsersByIds(repository.getFollowingIds(userId).toList())
 
     fun toggleFollowById(targetId: String, username: String) {
         if (VynoraOfficial.isOfficialAccount(null, username)) {
