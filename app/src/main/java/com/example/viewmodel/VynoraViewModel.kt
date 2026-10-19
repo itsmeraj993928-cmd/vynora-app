@@ -71,6 +71,7 @@ data class VynoraUiState(
     val payments: List<PaymentRecord> = emptyList(),
     val creatorStats: CreatorStats = CreatorStats(),
     val activeCommentsPostId: String? = null,
+    val highlightCommentId: String? = null,
     val activeSharePost: Post? = null,
     val activeReportTarget: Triple<String, String, String>? = null,
     val toastMessage: String? = null,
@@ -767,12 +768,12 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    fun openComments(postId: String) {
-        _uiState.update { it.copy(activeCommentsPostId = postId) }
+    fun openComments(postId: String, highlightCommentId: String? = null) {
+        _uiState.update { it.copy(activeCommentsPostId = postId, highlightCommentId = highlightCommentId) }
     }
 
     fun closeComments() {
-        _uiState.update { it.copy(activeCommentsPostId = null) }
+        _uiState.update { it.copy(activeCommentsPostId = null, highlightCommentId = null) }
     }
 
     fun addComment(postId: String, text: String, replyToId: String? = null) {
@@ -1029,6 +1030,91 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     // Moments
+    // ---- Background upload (continues while the user browses the app) ----
+    data class UploadStatus(
+        val label: String,
+        val progress: Int = 0,
+        val sizeMb: Float = 0f,
+        val failed: Boolean = false,
+        val message: String = ""
+    )
+
+    private val _uploadStatus = MutableStateFlow<UploadStatus?>(null)
+    val uploadStatus: StateFlow<UploadStatus?> = _uploadStatus.asStateFlow()
+    private var lastUploadJob: (() -> Unit)? = null
+
+    fun dismissUpload() {
+        _uploadStatus.value = null
+        lastUploadJob = null
+    }
+
+    fun retryUpload() { lastUploadJob?.invoke() }
+
+    fun startBackgroundUpload(
+        kind: String,
+        uri: android.net.Uri,
+        caption: String,
+        hashtags: List<String>,
+        location: String?,
+        filterName: String?,
+        visibility: String,
+        music: String,
+        closeFriends: Boolean
+    ) {
+        val current = _uploadStatus.value
+        if (current != null && !current.failed) {
+            showToast("Another upload is still in progress. Please wait.")
+            return
+        }
+        val app = getApplication<Application>()
+        val label = when (kind) { "CLIP" -> "reel"; "MOMENT" -> "moment"; else -> "post" }
+        val sizeMb = try {
+            val bytes = app.contentResolver.openAssetFileDescriptor(uri, "r")?.use { it.length } ?: 0L
+            if (bytes > 0L) bytes / 1048576f else 0f
+        } catch (e: Exception) { 0f }
+        val isVideo = (app.contentResolver.getType(uri) ?: "").startsWith("video")
+
+        val job: () -> Unit = {
+            _uploadStatus.value = UploadStatus(label = label, progress = 0, sizeMb = sizeMb)
+            viewModelScope.launch {
+                val res = com.example.util.CloudinaryUploader.uploadUri(
+                    context = app,
+                    uri = uri,
+                    onProgress = { p -> _uploadStatus.update { st -> st?.copy(progress = p) } }
+                )
+                if (res.isSuccess) {
+                    val result = res.getOrNull()
+                    val url = result?.secureUrl
+                    if (url.isNullOrBlank()) {
+                        _uploadStatus.value = UploadStatus(label, 0, sizeMb, true, "Upload failed. Please try again.")
+                    } else {
+                        val publicId = result?.publicId ?: ""
+                        when (kind) {
+                            "CLIP" -> publishClip(caption, url, music, cloudinaryPublicId = publicId, visibility = visibility)
+                            "MOMENT" -> publishMoment(caption, url, music, closeFriends, visibility)
+                            else -> publishPost(
+                                caption, hashtags, listOf(url), location, filterName,
+                                cloudinaryPublicId = publicId,
+                                cloudinaryResourceType = if (isVideo) "video" else "image",
+                                visibility = visibility
+                            )
+                        }
+                        _uploadStatus.value = null
+                        lastUploadJob = null
+                        showToast("Your $label is live! 🎉")
+                    }
+                } else {
+                    _uploadStatus.value = UploadStatus(
+                        label, 0, sizeMb, true,
+                        res.exceptionOrNull()?.localizedMessage ?: "Upload failed. Please try again."
+                    )
+                }
+            }
+        }
+        lastUploadJob = job
+        job()
+    }
+
     fun publishMoment(textOverlay: String, mediaUrl: String, musicTrack: String?, isCloseFriends: Boolean, visibility: String = "PUBLIC") {
         val user = _uiState.value.currentUser ?: return
         if (!user.isEmailVerified && !user.isOfficial) {
@@ -1304,11 +1390,19 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    fun markAllNotificationsRead() {
+    suspend fun loadUserAvatar(userId: String): String = try { repository.getUserAvatar(userId) } catch (e: Exception) { "" }
+
+    fun markNotificationsSeen() {
+        val unread = _uiState.value.notifications.filter { !it.isRead }.map { it.id }
+        if (unread.isEmpty()) return
         _uiState.update { state ->
-            val updated = state.notifications.map { it.copy(isRead = true) }
-            state.copy(notifications = updated)
+            state.copy(notifications = state.notifications.map { it.copy(isRead = true) })
         }
+        viewModelScope.launch { repository.markNotificationsRead(unread) }
+    }
+
+    fun markAllNotificationsRead() {
+        markNotificationsSeen()
         showToast("All notifications marked as read")
     }
 
