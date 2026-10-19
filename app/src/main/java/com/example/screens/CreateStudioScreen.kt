@@ -109,7 +109,24 @@ fun CreateStudioScreen(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri: Uri? ->
         if (uri != null) {
-            startUpload(uri)
+            var blocked = false
+            if (mode == CreateMode.CLIP) {
+                val durMs: Long = try {
+                    val r = android.media.MediaMetadataRetriever()
+                    r.setDataSource(context, uri)
+                    val d = r.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+                    r.release()
+                    d
+                } catch (e: Exception) { 0L }
+                if (durMs in 1..2999) {
+                    onToast("Reels must be at least 3 seconds long")
+                    blocked = true
+                } else if (durMs > 90_000L) {
+                    onToast("Reels can be at most 90 seconds long")
+                    blocked = true
+                }
+            }
+            if (!blocked) startUpload(uri)
         }
     }
 

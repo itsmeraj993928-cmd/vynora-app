@@ -36,6 +36,7 @@ fun NotificationsScreen(
     onBack: () -> Unit,
     onUserClick: (String, String) -> Unit,
     onFollowBack: (String, String) -> Unit = { _, _ -> },
+    onPostClick: (String) -> Unit = {},
     isFollowing: (String) -> Boolean = { false },
     modifier: Modifier = Modifier
 ) {
@@ -180,7 +181,10 @@ fun NotificationsScreen(
                             NotificationRow(
                                 item = item,
                                 isDarkMode = isDarkMode,
-                                onUserClick = { onUserClick(item.user.id, item.user.username) },
+                                onUserClick = {
+                                    if (item.postId.isNotBlank() && (item.type == NotificationType.LIKE || item.type == NotificationType.COMMENT)) onPostClick(item.postId)
+                                    else onUserClick(item.user.id, item.user.username)
+                                },
                                 onFollowBack = { onFollowBack(item.user.id, item.user.username) },
                                 alreadyFollowing = isFollowing(item.user.id)
                             )

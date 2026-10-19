@@ -769,7 +769,7 @@ fun ProfileScreen(
                         Text("Add account / Log in to another", color = VynoraNeonCyan, fontWeight = FontWeight.Bold)
                     }
                     Text(
-                        "Is phone me jo account login hue hain, un par ek tap me switch ho jayega.",
+                        "Accounts you have logged into on this phone can be switched with one tap.",
                         fontSize = 11.sp,
                         color = Color(0xFF94A3B8)
                     )

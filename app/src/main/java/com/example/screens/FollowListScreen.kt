@@ -115,8 +115,8 @@ fun FollowListScreen(
             filtered.isEmpty() -> {
                 Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
                     Text(
-                        text = if (query.isNotBlank()) "Koi nahi mila"
-                        else if (tab == 0) "Abhi koi follower nahi hai" else "Abhi kisi ko follow nahi kiya",
+                        text = if (query.isNotBlank()) "No results found"
+                        else if (tab == 0) "No followers yet" else "Not following anyone yet",
                         color = textSecondary,
                         fontSize = 14.sp
                     )

@@ -648,7 +648,7 @@ fun AuthScreen(
                                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
                                     singleLine = true,
                                     isError = phoneStatus == AvailabilityStatus.TAKEN,
-                                    supportingText = { if (phoneStatus == AvailabilityStatus.TAKEN) Text("Ye number pehle se registered hai") },
+                                    supportingText = { if (phoneStatus == AvailabilityStatus.TAKEN) Text("This number is already registered") },
                                     modifier = Modifier.fillMaxWidth().testTag("signup_phone_input"),
                                     shape = RoundedCornerShape(14.dp)
                                 )

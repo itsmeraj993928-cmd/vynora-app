@@ -200,8 +200,8 @@ fun EditProfileScreen(
     // Media Pickers: photo is compressed on the phone and stored with the profile (no Cloudinary needed)
     fun applyPhoto(compressed: String?) {
         if (compressed.isNullOrBlank()) {
-            photoUploadError = "Photo load nahi hui, dobara try karo"
-            onToast("Photo load nahi hui, dobara try karo")
+            photoUploadError = "Could not load the photo. Please try again"
+            onToast("Could not load the photo. Please try again")
             return
         }
         val raw = if (compressed.contains("base64,")) compressed.substringAfter("base64,") else compressed
