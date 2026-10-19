@@ -203,7 +203,8 @@ data class NotificationItem(
     val timeGroup: String = "Today",
     val timestamp: String = "",
     val isRead: Boolean = false,
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    val postId: String = ""
 )
 
 data class ReportItem(
