@@ -319,6 +319,7 @@ fun VynoraApp(viewModel: VynoraViewModel) {
                         else viewModel.openUserProfileByUsername(uname)
                     },
                     onFollowBack = { uid, uname -> viewModel.toggleFollowById(uid, uname) },
+                    onPostClick = { pid -> viewModel.openComments(pid) },
                     isFollowing = { uid -> viewModel.isFollowingUser(uid) }
                 )
             }
