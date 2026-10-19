@@ -254,7 +254,8 @@ fun VynoraApp(viewModel: VynoraViewModel) {
                                             viewModel.addHighlight(title, coverUrl)
                                         },
                                         savedAccounts = savedAccountsList,
-                                        onSwitchAccount = { ident -> viewModel.switchAccount(ident) },
+                                        onSwitchAccount = { accId, ident -> viewModel.switchAccount(accId, ident) },
+                                        onOpenFollowList = { tab -> uiState.currentUser?.let { viewModel.openFollowList(it.id, it.username, tab) } },
                                         onAddAccount = { viewModel.addAccount() },
                                         onToast = { msg -> viewModel.showToast(msg) }
                                     )
@@ -401,6 +402,20 @@ fun VynoraApp(viewModel: VynoraViewModel) {
                     onToast = { msg -> viewModel.showToast(msg) }
                 )
             }
+            is ScreenDestination.FollowList -> {
+                FollowListScreen(
+                    username = screen.username,
+                    initialTab = screen.tab,
+                    isDarkMode = uiState.isDarkMode,
+                    myId = uiState.currentUser?.id ?: "",
+                    loadFollowers = { viewModel.loadFollowers(screen.userId) },
+                    loadFollowing = { viewModel.loadFollowing(screen.userId) },
+                    isFollowing = { id -> viewModel.isFollowingUser(id) },
+                    onFollowToggle = { u -> viewModel.toggleFollowById(u.id, u.username) },
+                    onUserClick = { id -> viewModel.openUserProfile(id) },
+                    onBack = { viewModel.navigateBack() }
+                )
+            }
             is ScreenDestination.UserProfile -> {
                 val otherId = screen.userId
                 val other by produceState<com.example.model.User?>(initialValue = null, otherId) {
@@ -424,6 +439,7 @@ fun VynoraApp(viewModel: VynoraViewModel) {
                         onUpdateProfile = { _, _, _ -> },
                         onToast = { msg -> viewModel.showToast(msg) },
                         isOwnProfile = false,
+                        onOpenFollowList = { tab -> viewModel.openFollowList(shown.id, shown.username, tab) },
                         isFollowing = following,
                         onFollowClick = {
                             viewModel.toggleFollowById(otherId, shown.username)
