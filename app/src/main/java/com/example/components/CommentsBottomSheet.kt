@@ -7,6 +7,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -23,6 +24,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import kotlinx.coroutines.delay
 import com.example.util.formatCount
 import com.example.i18n.AppLanguage
 import com.example.i18n.VynoraStrings
@@ -44,11 +46,30 @@ fun CommentsBottomSheet(
     onLikeComment: (commentId: String) -> Unit,
     onPinComment: (commentId: String) -> Unit,
     onDeleteComment: (commentId: String) -> Unit,
-    onTranslateComment: (text: String, onResult: (String) -> Unit) -> Unit
+    onTranslateComment: (text: String, onResult: (String) -> Unit) -> Unit,
+    highlightCommentId: String? = null,
+    loadAvatar: suspend (String) -> String = { "" }
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var commentText by remember { mutableStateOf("") }
     var replyingTo by remember { mutableStateOf<Comment?>(null) }
+    val listState = rememberLazyListState()
+    var showHighlight by remember(highlightCommentId) { mutableStateOf(highlightCommentId != null) }
+
+    LaunchedEffect(highlightCommentId, post.comments.size) {
+        if (highlightCommentId != null) {
+            val idx = post.comments.indexOfFirst { c ->
+                c.id == highlightCommentId || c.replies.any { it.id == highlightCommentId }
+            }
+            if (idx >= 0) listState.animateScrollToItem(idx)
+        }
+    }
+    LaunchedEffect(highlightCommentId) {
+        if (highlightCommentId != null) {
+            delay(4000)
+            showHighlight = false
+        }
+    }
 
     val sheetBg = if (isDarkMode) Color(0xFF0F121E) else Color(0xFFFFFFFF)
 
@@ -94,6 +115,7 @@ fun CommentsBottomSheet(
 
             // Comments List
             LazyColumn(
+                state = listState,
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth(),
@@ -130,6 +152,9 @@ fun CommentsBottomSheet(
                             isCommentAuthor = comment.author.id == currentUser.id,
                             isDarkMode = isDarkMode,
                             currentLanguage = currentLanguage,
+                            highlighted = showHighlight && highlightCommentId != null &&
+                                (comment.id == highlightCommentId || comment.replies.any { it.id == highlightCommentId }),
+                            loadAvatar = loadAvatar,
                             onReplyClick = { replyingTo = comment },
                             onLike = { onLikeComment(comment.id) },
                             onPin = { onPinComment(comment.id) },
@@ -199,12 +224,9 @@ fun CommentsBottomSheet(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                AsyncImage(
-                    model = currentUser.avatarUrl,
-                    contentDescription = "My Avatar",
-                    modifier = Modifier
-                        .size(36.dp)
-                        .clip(CircleShape)
+                StoryRingAvatar(
+                    avatarUrl = currentUser.avatarUrl,
+                    size = 36.dp
                 )
 
                 OutlinedTextField(
@@ -258,6 +280,8 @@ private fun CommentItemRow(
     isCommentAuthor: Boolean,
     isDarkMode: Boolean,
     currentLanguage: AppLanguage,
+    highlighted: Boolean,
+    loadAvatar: suspend (String) -> String,
     onReplyClick: () -> Unit,
     onLike: () -> Unit,
     onPin: () -> Unit,
@@ -267,20 +291,35 @@ private fun CommentItemRow(
     var translatedText by remember { mutableStateOf<String?>(null) }
     var isTranslating by remember { mutableStateOf(false) }
 
+    val avatar by produceState(initialValue = comment.author.avatarUrl, comment.author.id) {
+        val a = try { loadAvatar(comment.author.id) } catch (e: Exception) { "" }
+        if (a.isNotBlank()) value = a
+    }
+
     Column(
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(if (highlighted) Color(0x2200D1FF) else Color.Transparent)
+            .padding(vertical = if (highlighted) 6.dp else 0.dp)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.Top,
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            AsyncImage(
-                model = comment.author.avatarUrl,
-                contentDescription = null,
-                modifier = Modifier
-                    .size(34.dp)
-                    .clip(CircleShape)
+            if (highlighted) {
+                Box(
+                    modifier = Modifier
+                        .width(3.dp)
+                        .height(44.dp)
+                        .clip(RoundedCornerShape(2.dp))
+                        .background(VynoraNeonCyan)
+                )
+            }
+            StoryRingAvatar(
+                avatarUrl = avatar,
+                size = 34.dp
             )
 
             Column(modifier = Modifier.weight(1f)) {
@@ -416,12 +455,13 @@ private fun CommentItemRow(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        AsyncImage(
-                            model = reply.author.avatarUrl,
-                            contentDescription = null,
-                            modifier = Modifier
-                                .size(24.dp)
-                                .clip(CircleShape)
+                        val replyAvatar by produceState(initialValue = reply.author.avatarUrl, reply.author.id) {
+                            val a = try { loadAvatar(reply.author.id) } catch (e: Exception) { "" }
+                            if (a.isNotBlank()) value = a
+                        }
+                        StoryRingAvatar(
+                            avatarUrl = replyAvatar,
+                            size = 24.dp
                         )
                         Column {
                             Text(
