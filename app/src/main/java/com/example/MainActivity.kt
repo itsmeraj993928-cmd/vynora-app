@@ -183,7 +183,8 @@ fun VynoraApp(viewModel: VynoraViewModel) {
                                         onCommentsClick = { postId -> viewModel.openComments(postId) },
                                         onShareClick = { post -> viewModel.openShare(post) },
                                         onReportClick = { type, id, username -> viewModel.openReportDialog(type, id, username) },
-                                        onAuthorClick = { viewModel.selectTab(MainTab.PROFILE) }
+                                        onAuthorClick = { username -> viewModel.openUserProfileByUsername(username) },
+                                        onFollowAuthor = { id, username -> viewModel.toggleFollowById(id, username) }
                                     )
                                 }
                                 MainTab.EXPLORE -> {
@@ -399,6 +400,38 @@ fun VynoraApp(viewModel: VynoraViewModel) {
                     onBack = { viewModel.navigateBack() },
                     onToast = { msg -> viewModel.showToast(msg) }
                 )
+            }
+            is ScreenDestination.UserProfile -> {
+                val otherId = screen.userId
+                val other by produceState<com.example.model.User?>(initialValue = null, otherId) {
+                    value = viewModel.loadUserProfile(otherId)
+                }
+                var following by remember(otherId) { mutableStateOf(viewModel.isFollowingUser(otherId)) }
+                val shown = other
+                if (shown == null) {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator()
+                    }
+                } else {
+                    ProfileScreen(
+                        user = shown,
+                        posts = uiState.posts,
+                        clips = uiState.clips,
+                        isDarkMode = uiState.isDarkMode,
+                        onOpenSettings = {},
+                        onOpenCreatorStudio = {},
+                        onOpenAdminPanel = {},
+                        onUpdateProfile = { _, _, _ -> },
+                        onToast = { msg -> viewModel.showToast(msg) },
+                        isOwnProfile = false,
+                        isFollowing = following,
+                        onFollowClick = {
+                            viewModel.toggleFollowById(otherId, shown.username)
+                            following = viewModel.isFollowingUser(otherId)
+                        },
+                        onBackClick = { viewModel.navigateBack() }
+                    )
+                }
             }
             is ScreenDestination.EditProfile -> {
                 EditProfileScreen(
