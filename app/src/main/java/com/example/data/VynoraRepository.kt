@@ -272,39 +272,19 @@ class VynoraRepository(
         // Save user document
         db.collection("users").document(uid).set(newUser).await()
 
-        // Auto follow vynora_official
+        // Auto follow founder account (@meraj)
         try {
-            ensureOfficialAccountExists()
-            db.collection("follows").document("${uid}_${VynoraOfficial.OFFICIAL_USER_ID}").set(
-                mapOf(
-                    "followerId" to uid,
-                    "followedId" to VynoraOfficial.OFFICIAL_USER_ID,
-                    "timestamp" to FieldValue.serverTimestamp()
-                )
-            ).await()
-
-            // Send welcome message in Chats from vynora_official
-            val welcomeChatId = if (uid < VynoraOfficial.OFFICIAL_USER_ID) "${uid}_${VynoraOfficial.OFFICIAL_USER_ID}" else "${VynoraOfficial.OFFICIAL_USER_ID}_${uid}"
-            db.collection("chats").document(welcomeChatId).set(
-                mapOf(
-                    "id" to welcomeChatId,
-                    "participantIds" to listOf(uid, VynoraOfficial.OFFICIAL_USER_ID),
-                    "lastMessage" to VynoraOfficial.welcomeMessage().take(60) + "...",
-                    "updatedAt" to FieldValue.serverTimestamp()
-                )
-            ).await()
-
-            val msgId = "msg_welcome_${System.currentTimeMillis()}"
-            db.collection("chats").document(welcomeChatId).collection("messages").document(msgId).set(
-                ChatMessage(
-                    id = msgId,
-                    senderId = VynoraOfficial.OFFICIAL_USER_ID,
-                    text = VynoraOfficial.welcomeMessage(),
-                    timestamp = "Now",
-                    isRead = false
-                )
-            ).await()
-        } catch (ignored: Exception) {}
+            val founderId = db.collection("usernames").document("meraj").get().await().getString("userId")
+            if (!founderId.isNullOrBlank() && founderId != uid) {
+                db.collection("follows").document("${uid}_$founderId").set(
+                    mapOf(
+                        "followerId" to uid,
+                        "followedId" to founderId,
+                        "timestamp" to FieldValue.serverTimestamp()
+                    )
+                ).await()
+            }
+        } catch (_: Exception) {}
 
         return Result.success(newUser)
     }
