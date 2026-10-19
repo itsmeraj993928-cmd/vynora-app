@@ -210,6 +210,10 @@ fun VynoraApp(viewModel: VynoraViewModel) {
                                         onPublishClip = { caption, mediaUrl, music, visibility ->
                                             viewModel.publishClip(caption, mediaUrl, music, visibility = visibility)
                                         },
+                                        onStartBackgroundUpload = { kind, uri, cap, tags, loc, filter, vis, music, close ->
+                                            viewModel.startBackgroundUpload(kind, uri, cap, tags, loc, filter, vis, music, close)
+                                            viewModel.selectTab(if (kind == "CLIP") MainTab.CLIPS else MainTab.HOME)
+                                        },
                                         onRequestAiCaption = { topic, onResult ->
                                             viewModel.requestAiCaption(topic, onResult)
                                         },
@@ -261,6 +265,50 @@ fun VynoraApp(viewModel: VynoraViewModel) {
                                     )
                                 }
                             }
+                            val upStatus by viewModel.uploadStatus.collectAsStateWithLifecycle()
+                            upStatus?.let { st ->
+                                Surface(
+                                    modifier = Modifier
+                                        .align(Alignment.TopCenter)
+                                        .windowInsetsPadding(WindowInsets.statusBars)
+                                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                                        .fillMaxWidth(),
+                                    shape = RoundedCornerShape(14.dp),
+                                    color = Color(0xFF0F121E),
+                                    tonalElevation = 6.dp
+                                ) {
+                                    Column(modifier = Modifier.padding(12.dp)) {
+                                        if (st.failed) {
+                                            Text(
+                                                text = "Your ${st.label} could not be uploaded",
+                                                color = Color.White,
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 13.sp
+                                            )
+                                            Text(text = st.message, color = Color(0xFF94A3B8), fontSize = 12.sp)
+                                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                TextButton(onClick = { viewModel.retryUpload() }) { Text("Retry") }
+                                                TextButton(onClick = { viewModel.dismissUpload() }) { Text("Dismiss") }
+                                            }
+                                        } else {
+                                            val mbText = if (st.sizeMb > 0f) " (" + String.format("%.1f", st.sizeMb) + " MB)" else ""
+                                            Text(
+                                                text = "Uploading your ${st.label}$mbText… ${st.progress}%",
+                                                color = Color.White,
+                                                fontWeight = FontWeight.SemiBold,
+                                                fontSize = 13.sp
+                                            )
+                                            Spacer(modifier = Modifier.height(8.dp))
+                                            LinearProgressIndicator(
+                                                progress = { st.progress / 100f },
+                                                modifier = Modifier.fillMaxWidth().height(5.dp),
+                                                color = Color(0xFF00D1FF),
+                                                trackColor = Color(0xFF1E2438)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -309,6 +357,9 @@ fun VynoraApp(viewModel: VynoraViewModel) {
                 )
             }
             is ScreenDestination.Notifications -> {
+                DisposableEffect(Unit) {
+                    onDispose { viewModel.markNotificationsSeen() }
+                }
                 NotificationsScreen(
                     notifications = uiState.notifications,
                     isDarkMode = uiState.isDarkMode,
@@ -319,7 +370,7 @@ fun VynoraApp(viewModel: VynoraViewModel) {
                         else viewModel.openUserProfileByUsername(uname)
                     },
                     onFollowBack = { uid, uname -> viewModel.toggleFollowById(uid, uname) },
-                    onPostClick = { pid -> viewModel.openComments(pid) },
+                    onPostClick = { pid, cid -> viewModel.openComments(pid, cid) },
                     isFollowing = { uid -> viewModel.isFollowingUser(uid) }
                 )
             }
@@ -479,6 +530,8 @@ fun VynoraApp(viewModel: VynoraViewModel) {
                     isDarkMode = uiState.isDarkMode,
                     currentLanguage = uiState.currentLanguage,
                     onDismiss = { viewModel.closeComments() },
+                    highlightCommentId = uiState.highlightCommentId,
+                    loadAvatar = { id -> viewModel.loadUserAvatar(id) },
                     onAddComment = { pId, text, replyId -> viewModel.addComment(pId, text, replyId) },
                     onLikeComment = { cId -> viewModel.toggleLikeComment(post.id, cId) },
                     onPinComment = { cId -> viewModel.pinComment(post.id, cId) },
