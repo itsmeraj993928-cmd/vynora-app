@@ -45,6 +45,7 @@ sealed class ScreenDestination {
     object GetBadge : ScreenDestination()
     object EditProfile : ScreenDestination()
     data class Legal(val docType: String) : ScreenDestination()
+    data class UserProfile(val userId: String) : ScreenDestination()
 }
 
 enum class MainTab {
@@ -925,6 +926,54 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
             state.copy(clips = updated)
         }
         showToast("Clip saved to collection")
+    }
+
+    // ---- Other people's profiles ----
+    fun openUserProfile(userId: String) {
+        val me = _uiState.value.currentUser
+        if (userId.isBlank() || userId == me?.id) {
+            selectTab(MainTab.PROFILE)
+        } else {
+            navigateTo(ScreenDestination.UserProfile(userId))
+        }
+    }
+
+    fun openUserProfileByUsername(username: String) {
+        val st = _uiState.value
+        val id = st.posts.firstOrNull { it.author.username == username }?.author?.id
+            ?: st.clips.firstOrNull { it.author.username == username }?.author?.id
+        if (id == null) selectTab(MainTab.PROFILE) else openUserProfile(id)
+    }
+
+    suspend fun loadUserProfile(userId: String): User? {
+        val fromDb = try { repository.getUserProfile(userId) } catch (e: Exception) { null }
+        if (fromDb != null) return fromDb.copy(id = userId)
+        val st = _uiState.value
+        return st.posts.firstOrNull { it.author.id == userId }?.author
+            ?: st.clips.firstOrNull { it.author.id == userId }?.author
+    }
+
+    fun isFollowingUser(userId: String): Boolean = userId in followingIds
+
+    fun toggleFollowById(targetId: String, username: String) {
+        if (VynoraOfficial.isOfficialAccount(null, username)) {
+            showToast("You cannot unfollow the official VYNORA account.")
+            return
+        }
+        val me = _uiState.value.currentUser ?: return
+        if (targetId.isBlank() || targetId == me.id) return
+        val nowFollowing = targetId !in followingIds
+        followingIds = if (nowFollowing) followingIds + targetId else followingIds - targetId
+        _uiState.update { state ->
+            val d = if (nowFollowing) 1 else -1
+            state.copy(
+                posts = state.posts.map { p -> if (p.author.id == targetId) p.copy(author = p.author.copy(isFollowing = nowFollowing)) else p },
+                clips = state.clips.map { c -> if (c.author.id == targetId) c.copy(isFollowing = nowFollowing, author = c.author.copy(isFollowing = nowFollowing)) else c },
+                currentUser = state.currentUser?.let { cu -> cu.copy(followingCount = maxOf(0, cu.followingCount + d)) }
+            )
+        }
+        showToast(if (nowFollowing) "Following @$username" else "Unfollowed @$username")
+        viewModelScope.launch { repository.setFollow(me, targetId, nowFollowing) }
     }
 
     fun toggleFollowCreator(username: String) {
