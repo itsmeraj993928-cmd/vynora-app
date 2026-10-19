@@ -64,7 +64,8 @@ fun ProfileScreen(
     onAddHighlight: (title: String, coverUrl: String) -> Unit = { _, _ -> },
     onToast: (String) -> Unit,
     savedAccounts: List<com.example.model.SavedAccount> = emptyList(),
-    onSwitchAccount: (String) -> Unit = {},
+    onSwitchAccount: (accountId: String, identifier: String) -> Unit = { _, _ -> },
+    onOpenFollowList: (tab: Int) -> Unit = {},
     onAddAccount: () -> Unit = {},
     isOwnProfile: Boolean = true,
     isFollowing: Boolean = false,
@@ -230,8 +231,8 @@ fun ProfileScreen(
                         ) {
                             ProfileStatItem("Posts", formatCount(userPosts.size), isDarkMode)
                             if (!user.hideFollowersCount) {
-                                ProfileStatItem("Followers", formatCount(user.followersCount), isDarkMode)
-                                ProfileStatItem("Following", formatCount(user.followingCount), isDarkMode)
+                                ProfileStatItem("Followers", formatCount(user.followersCount), isDarkMode, onClick = { onOpenFollowList(0) })
+                                ProfileStatItem("Following", formatCount(user.followingCount), isDarkMode, onClick = { onOpenFollowList(1) })
                             } else {
                                 ProfileStatItem("Followers", "—", isDarkMode)
                                 ProfileStatItem("Following", "—", isDarkMode)
@@ -742,7 +743,7 @@ fun ProfileScreen(
                                 .clip(RoundedCornerShape(12.dp))
                                 .clickable(enabled = !isCurrent) {
                                     showAccountSwitcher = false
-                                    onSwitchAccount(acc.identifier)
+                                    onSwitchAccount(acc.id, acc.identifier)
                                 }
                                 .padding(8.dp),
                             verticalAlignment = Alignment.CenterVertically,
@@ -768,7 +769,7 @@ fun ProfileScreen(
                         Text("Add account / Log in to another", color = VynoraNeonCyan, fontWeight = FontWeight.Bold)
                     }
                     Text(
-                        "Account badalne ke liye us account ka password dalna padega.",
+                        "Is phone me jo account login hue hain, un par ek tap me switch ho jayega.",
                         fontSize = 11.sp,
                         color = Color(0xFF94A3B8)
                     )
@@ -1012,8 +1013,11 @@ fun ProfileScreen(
 }
 
 @Composable
-private fun ProfileStatItem(label: String, count: String, isDarkMode: Boolean) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+private fun ProfileStatItem(label: String, count: String, isDarkMode: Boolean, onClick: (() -> Unit)? = null) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = if (onClick != null) Modifier.clip(RoundedCornerShape(8.dp)).clickable { onClick() }.padding(4.dp) else Modifier
+    ) {
         Text(
             text = count,
             fontWeight = FontWeight.ExtraBold,
