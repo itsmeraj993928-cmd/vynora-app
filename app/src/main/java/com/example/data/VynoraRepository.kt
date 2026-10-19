@@ -696,6 +696,24 @@ class VynoraRepository(
         }
     }
 
+    suspend fun getFollowerIds(userId: String): List<String> {
+        return try {
+            db.collection("follows").whereEqualTo("followedId", userId).get().await()
+                .documents.mapNotNull { it.getString("followerId") }.distinct()
+        } catch (e: Exception) {
+            Log.e("VynoraRepository", "Error loading followers: ${e.message}", e)
+            emptyList()
+        }
+    }
+
+    suspend fun getUsersByIds(ids: List<String>): List<User> {
+        val list = ids.distinct().take(300)
+        return kotlinx.coroutines.coroutineScope {
+            list.map { id -> kotlinx.coroutines.async { loadUserCached(id) } }
+                .let { jobs -> kotlinx.coroutines.awaitAll(*jobs.toTypedArray()) }
+        }
+    }
+
     suspend fun savePost(post: Post) {
         try {
             db.collection("posts").document(post.id).set(post).await()
