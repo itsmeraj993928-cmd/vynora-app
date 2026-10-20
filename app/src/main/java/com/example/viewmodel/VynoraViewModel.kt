@@ -73,6 +73,9 @@ data class VynoraUiState(
     val payments: List<PaymentRecord> = emptyList(),
     val creatorStats: CreatorStats = CreatorStats(),
     val activeCommentsPostId: String? = null,
+    val activeCall: CallInfo? = null,
+    val incomingCall: CallInfo? = null,
+    val callPeer: User? = null,
     val highlightCommentId: String? = null,
     val activeSharePost: Post? = null,
     val activeReportTarget: Triple<String, String, String>? = null,
@@ -220,6 +223,25 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
             launch {
                 repository.observeChats(userId).collect { chatsList ->
                     _uiState.update { it.copy(chats = chatsList) }
+                }
+            }
+            launch {
+                repository.observeIncomingCalls(userId).collect { call ->
+                    val st = _uiState.value
+                    if (call == null) {
+                        if (st.incomingCall != null && st.activeCall == null) {
+                            _uiState.update { it.copy(incomingCall = null, callPeer = null) }
+                        }
+                        return@collect
+                    }
+                    if (st.activeCall != null) {
+                        repository.updateCallStatus(call.id, "DECLINED") // already on a call
+                        return@collect
+                    }
+                    if (st.incomingCall?.id == call.id) return@collect
+                    val peer = try { repository.getUserProfile(call.callerId) } catch (e: Exception) { null }
+                        ?: User(id = call.callerId, username = "Someone")
+                    _uiState.update { it.copy(incomingCall = call, callPeer = peer.copy(id = call.callerId)) }
                 }
             }
             launch {
@@ -1009,6 +1031,85 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
         val link = "$CALL_SERVER_BASE/$room" + if (video) "" else "#config.startWithVideoMuted=true"
         sendMessage(conversationId, (if (video) "Started a video call: " else "Started a voice call: ") + link)
         return link
+    }
+
+    // ---- In-app voice / video calls (Agora for media, Firestore "calls" for ringing) ----
+    private var callWatchJob: kotlinx.coroutines.Job? = null
+    private var ringTimeoutJob: kotlinx.coroutines.Job? = null
+
+    private fun clearCallLocally() {
+        callWatchJob?.cancel(); callWatchJob = null
+        ringTimeoutJob?.cancel(); ringTimeoutJob = null
+        _uiState.update { it.copy(activeCall = null, incomingCall = null, callPeer = null) }
+    }
+
+    private fun watchCall(callId: String) {
+        callWatchJob?.cancel()
+        callWatchJob = viewModelScope.launch {
+            repository.observeCall(callId).collect { c ->
+                if (c == null) return@collect
+                val me = _uiState.value.currentUser?.id
+                if (c.status in listOf("ENDED", "DECLINED", "CANCELED", "MISSED")) {
+                    if (c.status == "DECLINED" && c.callerId == me) showToast("Call declined")
+                    clearCallLocally()
+                } else {
+                    _uiState.update { st -> if (st.activeCall?.id == c.id) st.copy(activeCall = c) else st }
+                }
+            }
+        }
+    }
+
+    fun placeCall(peer: User, video: Boolean) {
+        val me = _uiState.value.currentUser ?: return
+        if (peer.id.isBlank() || peer.id == me.id) return
+        if (_uiState.value.activeCall != null || _uiState.value.incomingCall != null) {
+            showToast("You are already in a call")
+            return
+        }
+        val now = System.currentTimeMillis()
+        val call = CallInfo(
+            id = "call_${now}_${me.id.takeLast(4)}",
+            callerId = me.id,
+            calleeId = peer.id,
+            video = video,
+            status = "RINGING",
+            channel = "call_${now}_${me.id.takeLast(4)}",
+            createdAt = now
+        )
+        _uiState.update { it.copy(activeCall = call, callPeer = peer) }
+        viewModelScope.launch { repository.createCall(call) }
+        watchCall(call.id)
+        ringTimeoutJob?.cancel()
+        ringTimeoutJob = viewModelScope.launch {
+            delay(45_000)
+            val cur = _uiState.value.activeCall
+            if (cur?.id == call.id && cur.status == "RINGING") {
+                repository.updateCallStatus(call.id, "MISSED")
+                clearCallLocally()
+                showToast("No answer")
+            }
+        }
+    }
+
+    fun acceptCall() {
+        val c = _uiState.value.incomingCall ?: return
+        _uiState.update { it.copy(activeCall = c.copy(status = "ACCEPTED"), incomingCall = null) }
+        viewModelScope.launch { repository.updateCallStatus(c.id, "ACCEPTED") }
+        watchCall(c.id)
+    }
+
+    fun declineCall() {
+        val c = _uiState.value.incomingCall ?: return
+        _uiState.update { it.copy(incomingCall = null, callPeer = null) }
+        viewModelScope.launch { repository.updateCallStatus(c.id, "DECLINED") }
+    }
+
+    fun endCall() {
+        val c = _uiState.value.activeCall ?: return
+        val me = _uiState.value.currentUser?.id
+        val status = if (c.status == "RINGING" && c.callerId == me) "CANCELED" else "ENDED"
+        clearCallLocally()
+        viewModelScope.launch { repository.updateCallStatus(c.id, status) }
     }
 
     fun isMutedUser(username: String): Boolean = username in mutedNames()
