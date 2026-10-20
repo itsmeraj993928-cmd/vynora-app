@@ -76,6 +76,8 @@ fun ProfileScreen(
     onMuteClick: () -> Unit = {},
     onBlockClick: () -> Unit = {},
     onBackClick: () -> Unit = {},
+    onOpenPost: (String) -> Unit = {},
+    onOpenClip: (Clip) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -619,10 +621,12 @@ fun ProfileScreen(
 
             // --- 5. Tab Content Grid ---
             item {
-                val displayList = when (selectedTab) {
-                    1 -> clips.map { it.mediaUrl }
-                    2 -> savedPosts.map { it.mediaUrls.firstOrNull() ?: "" }
-                    else -> userPosts.map { it.mediaUrls.firstOrNull() ?: "" }
+                val userClips = clips.filter { it.author.id == user.id || it.author.username == user.username }
+                // thumbnail, id, isClip
+                val displayList: List<Triple<String, String, Boolean>> = when (selectedTab) {
+                    1 -> userClips.map { Triple(profileVideoThumb(it.mediaUrl), it.id, true) }
+                    2 -> savedPosts.map { Triple(profilePostThumb(it), it.id, false) }
+                    else -> userPosts.map { Triple(profilePostThumb(it), it.id, false) }
                 }
 
                 if (displayList.isEmpty()) {
@@ -676,13 +680,17 @@ fun ProfileScreen(
                                     .padding(vertical = 1.dp),
                                 horizontalArrangement = Arrangement.spacedBy(2.dp)
                             ) {
-                                rowItems.forEach { mediaUrl ->
+                                rowItems.forEach { (mediaUrl, itemId, isClipItem) ->
                                     Box(
                                         modifier = Modifier
                                             .weight(1f)
                                             .aspectRatio(1f)
                                             .background(Color(0xFF1E2235))
-                                            .clickable { onToast("Viewing post details") }
+                                            .clickable {
+                                                if (isClipItem) {
+                                                    clips.firstOrNull { it.id == itemId }?.let { onOpenClip(it) }
+                                                } else onOpenPost(itemId)
+                                            }
                                     ) {
                                         AsyncImage(
                                             model = mediaUrl,
@@ -1124,4 +1132,17 @@ private fun FollowOptionsSheet(
             )
         }
     }
+}
+
+
+private fun profileVideoThumb(videoUrl: String): String {
+    val withoutExt = videoUrl.substringBeforeLast('.', videoUrl)
+    return if (videoUrl.contains("/video/upload/")) {
+        withoutExt.replace("/video/upload/", "/video/upload/so_0,w_480,h_480,c_fill/") + ".jpg"
+    } else withoutExt + ".jpg"
+}
+
+private fun profilePostThumb(post: Post): String {
+    val first = post.mediaUrls.firstOrNull() ?: return ""
+    return if (post.isVideo || first.contains("/video/upload/")) profileVideoThumb(first) else first
 }

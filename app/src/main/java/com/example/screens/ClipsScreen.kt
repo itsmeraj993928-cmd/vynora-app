@@ -7,6 +7,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.VerticalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -51,9 +52,13 @@ fun ClipsScreen(
     onToast: (String) -> Unit,
     modifier: Modifier = Modifier,
     currentUserId: String = "",
-    onDeleteClip: (String) -> Unit = {}
+    onDeleteClip: (String) -> Unit = {},
+    onUserClick: (String) -> Unit = {},
+    onBack: (() -> Unit)? = null,
+    initialIndex: Int = 0,
+    onCreateClick: (() -> Unit)? = null
 ) {
-    val pagerState = rememberPagerState(pageCount = { clips.size })
+    val pagerState = rememberPagerState(initialPage = initialIndex.coerceIn(0, maxOf(0, clips.size - 1)), pageCount = { clips.size })
     var isMuted by remember { mutableStateOf(false) }
 
     Box(
@@ -109,7 +114,9 @@ fun ClipsScreen(
                     onShareClick = { onShareClick(clip) },
                     isCurrentPage = pagerState.currentPage == page,
                     isOwner = currentUserId.isNotBlank() && clip.author.id == currentUserId,
-                    onDelete = { onDeleteClip(clip.id) }
+                    onDelete = { onDeleteClip(clip.id) },
+                    onUserClick = { onUserClick(clip.author.id) },
+                    onToast = onToast
                 )
             }
         }
@@ -123,13 +130,33 @@ fun ClipsScreen(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = "CLIPS",
-                fontSize = 20.sp,
-                fontWeight = FontWeight.ExtraBold,
-                letterSpacing = 2.sp,
-                color = Color.White
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (onBack != null) {
+                    IconButton(onClick = onBack, modifier = Modifier.size(38.dp)) {
+                        Icon(Icons.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
+                    }
+                    Spacer(modifier = Modifier.width(6.dp))
+                }
+                if (onBack != null) {
+                    Text(
+                        text = "Reels",
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = Color.White
+                    )
+                } else if (onCreateClick != null) {
+                    IconButton(
+                        onClick = onCreateClick,
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(CircleShape)
+                            .background(Color.Black.copy(alpha = 0.5f))
+                            .border(1.5.dp, Color.White, CircleShape)
+                    ) {
+                        Icon(Icons.Filled.Add, contentDescription = "Create", tint = Color.White, modifier = Modifier.size(24.dp))
+                    }
+                }
+            }
 
             IconButton(
                 onClick = {
@@ -164,8 +191,11 @@ private fun ClipItemView(
     onShareClick: () -> Unit,
     isCurrentPage: Boolean,
     isOwner: Boolean,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onUserClick: () -> Unit = {},
+    onToast: (String) -> Unit = {}
 ) {
+    var captionExpanded by remember { mutableStateOf(false) }
     var isPlaying by remember { mutableStateOf(true) }
     var heartVisible by remember { mutableStateOf(false) }
     LaunchedEffect(heartVisible) {
@@ -301,11 +331,12 @@ private fun ClipItemView(
                 ) {
                     StoryRingAvatar(
                         avatarUrl = clip.author.avatarUrl,
-                        size = 46.dp
+                        size = 46.dp,
+                        onClick = onUserClick
                     )
                 }
 
-                if (!clip.isFollowing) {
+                if (!clip.isFollowing && !isOwner) {
                     Box(
                         modifier = Modifier
                             .align(Alignment.BottomCenter)
@@ -329,7 +360,7 @@ private fun ClipItemView(
             // Like Action
             ActionIconWithCount(
                 icon = if (clip.isLiked) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
-                count = formatCount(clip.likesCount),
+                count = if (clip.hideLikeCount && !isOwner) "Like" else formatCount(clip.likesCount),
                 tint = if (clip.isLiked) VynoraNeonPink else Color.White,
                 onClick = onLikeToggle
             )
@@ -337,9 +368,9 @@ private fun ClipItemView(
             // Comment Action
             ActionIconWithCount(
                 icon = Icons.Outlined.ChatBubbleOutline,
-                count = formatCount(clip.commentsCount),
+                count = if (clip.commentsOff) "Off" else formatCount(clip.commentsCount),
                 tint = Color.White,
-                onClick = onCommentsClick
+                onClick = if (clip.commentsOff) ({ onToast("Comments are turned off for this reel") }) else onCommentsClick
             )
 
             // Save Action
@@ -353,7 +384,7 @@ private fun ClipItemView(
             // Share Action
             ActionIconWithCount(
                 icon = Icons.Outlined.Send,
-                count = formatCount(clip.sharesCount),
+                count = if (clip.hideShareCount && !isOwner) "Share" else formatCount(clip.sharesCount),
                 tint = Color.White,
                 onClick = onShareClick
             )
@@ -407,7 +438,8 @@ private fun ClipItemView(
                     text = "@${clip.author.username}",
                     fontWeight = FontWeight.Bold,
                     fontSize = 15.sp,
-                    color = Color.White
+                    color = Color.White,
+                    modifier = Modifier.clickable(onClick = onUserClick)
                 )
 
                 if (clip.author.isOfficial) {
@@ -416,7 +448,7 @@ private fun ClipItemView(
                     VynoraPlusBadge(size = 15.dp)
                 }
 
-                Surface(
+                if (!isOwner) Surface(
                     shape = RoundedCornerShape(12.dp),
                     color = if (clip.isFollowing) Color.White.copy(alpha = 0.2f) else VynoraNeonPink,
                     modifier = Modifier.clickable(onClick = onFollowToggle)
@@ -439,7 +471,16 @@ private fun ClipItemView(
                 fontSize = 13.sp,
                 color = Color.White,
                 lineHeight = 17.sp,
-                maxLines = 2
+                maxLines = if (captionExpanded) Int.MAX_VALUE else 2,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .clickable { captionExpanded = !captionExpanded }
+                    .then(
+                        if (captionExpanded) Modifier
+                            .heightIn(max = 220.dp)
+                            .verticalScroll(androidx.compose.foundation.rememberScrollState())
+                        else Modifier
+                    )
             )
 
             Spacer(modifier = Modifier.height(8.dp))
