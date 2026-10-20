@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.components.CommentsBottomSheet
+import com.example.components.ClipShareSheet
 import com.example.components.ReportDialog
 import com.example.components.ShareDialog
 import com.example.components.VynoraBottomNav
@@ -100,9 +101,28 @@ open class MainActivity : ComponentActivity() {
 fun VynoraApp(viewModel: VynoraViewModel) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val savedAccountsList by viewModel.savedAccounts.collectAsStateWithLifecycle()
+    var shareClip by remember { mutableStateOf<com.example.model.Clip?>(null) }
 
     // Handle Android system back press
     val hostContext = androidx.compose.ui.platform.LocalContext.current
+
+    // Ask for the microphone once, right after the account is created / first login,
+    // so voice notes work without a surprise prompt later.
+    val micPermissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+    ) { _ -> }
+    LaunchedEffect(uiState.isLoggedIn) {
+        if (uiState.isLoggedIn) {
+            val prefs = hostContext.getSharedPreferences("vynora_prefs", android.content.Context.MODE_PRIVATE)
+            if (!prefs.getBoolean("asked_mic_permission", false)) {
+                prefs.edit().putBoolean("asked_mic_permission", true).apply()
+                val granted = androidx.core.content.ContextCompat.checkSelfPermission(
+                    hostContext, android.Manifest.permission.RECORD_AUDIO
+                ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                if (!granted) micPermissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
+            }
+        }
+    }
     BackHandler(enabled = uiState.currentScreen !is ScreenDestination.Splash) {
         // If there is nowhere left to go back to (Home screen), close the app normally
         if (uiState.currentScreen is ScreenDestination.Auth || !viewModel.navigateBack()) {
@@ -234,20 +254,7 @@ fun VynoraApp(viewModel: VynoraViewModel) {
                                         onCommentsClick = { _ ->
                                             viewModel.showToast("Reel comments are coming soon")
                                         },
-                                        onShareClick = { clip ->
-                                            try {
-                                                val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-                                                    type = "text/plain"
-                                                    putExtra(
-                                                        android.content.Intent.EXTRA_TEXT,
-                                                        "Watch this reel by @${clip.author.username} on VYNORA: ${clip.mediaUrl}"
-                                                    )
-                                                }
-                                                hostContext.startActivity(android.content.Intent.createChooser(send, "Share reel"))
-                                            } catch (e: Exception) {
-                                                viewModel.showToast("Could not open share options")
-                                            }
-                                        },
+                                        onShareClick = { clip -> shareClip = clip },
                                         onToast = { msg -> viewModel.showToast(msg) }
                                     )
                                 }
@@ -370,7 +377,18 @@ fun VynoraApp(viewModel: VynoraViewModel) {
                         viewModel.addChatReaction(conversation.id, messageId, emoji)
                     },
                     onBack = { viewModel.navigateBack() },
-                    onToast = { msg -> viewModel.showToast(msg) }
+                    onToast = { msg -> viewModel.showToast(msg) },
+                    onSendVoiceNote = { file, dur -> viewModel.sendVoiceNote(conversation.id, file, dur) },
+                    onStartCall = { video ->
+                        val link = viewModel.startCall(conversation.id, video)
+                        try {
+                            hostContext.startActivity(
+                                android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(link))
+                            )
+                        } catch (e: Exception) {
+                            viewModel.showToast("Could not open the call")
+                        }
+                    }
                 )
             }
             is ScreenDestination.Notifications -> {
@@ -571,6 +589,55 @@ fun VynoraApp(viewModel: VynoraViewModel) {
                     }
                 )
             }
+        }
+
+        // 1b. Reel share sheet (in-app, Instagram style)
+        shareClip?.let { clipToShare ->
+            val shareText = "Watch this reel by @${clipToShare.author.username} on VYNORA: ${clipToShare.mediaUrl}"
+            ClipShareSheet(
+                isDarkMode = uiState.isDarkMode,
+                loadTargets = { viewModel.loadShareTargets() },
+                onSend = { users ->
+                    viewModel.shareClipToUsers(clipToShare, users)
+                    shareClip = null
+                },
+                onCopyLink = {
+                    try {
+                        val cm = hostContext.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                        cm.setPrimaryClip(android.content.ClipData.newPlainText("VYNORA reel", clipToShare.mediaUrl))
+                        viewModel.showToast("Link copied")
+                    } catch (e: Exception) {
+                        viewModel.showToast("Could not copy link")
+                    }
+                    shareClip = null
+                },
+                onWhatsApp = {
+                    try {
+                        val i = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                            type = "text/plain"
+                            setPackage("com.whatsapp")
+                            putExtra(android.content.Intent.EXTRA_TEXT, shareText)
+                        }
+                        hostContext.startActivity(i)
+                    } catch (e: Exception) {
+                        viewModel.showToast("WhatsApp is not installed")
+                    }
+                    shareClip = null
+                },
+                onMore = {
+                    try {
+                        val i = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                            type = "text/plain"
+                            putExtra(android.content.Intent.EXTRA_TEXT, shareText)
+                        }
+                        hostContext.startActivity(android.content.Intent.createChooser(i, "Share reel"))
+                    } catch (e: Exception) {
+                        viewModel.showToast("Could not open share options")
+                    }
+                    shareClip = null
+                },
+                onDismiss = { shareClip = null }
+            )
         }
 
         // 2. Share Dialog
