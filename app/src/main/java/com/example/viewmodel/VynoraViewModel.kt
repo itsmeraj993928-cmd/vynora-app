@@ -81,6 +81,8 @@ data class VynoraUiState(
     val deviceId: String = ""
 )
 
+private const val CALL_SERVER_BASE = "https://meet.jit.si"
+
 class VynoraViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = VynoraRepository(application.applicationContext)
     val authService: AuthService = FirebaseAuthService(application.applicationContext)
@@ -904,6 +906,54 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
         }
         viewModelScope.launch { repository.saveReport(newReport) }
         showToast("Report submitted to moderation team. Thank you for keeping VYNORA safe.")
+    }
+
+    suspend fun loadShareTargets(): List<User> {
+        val me = _uiState.value.currentUser ?: return emptyList()
+        val chatIds = _uiState.value.chats.filter { !it.isGroup }.map { it.participant.id }
+        val followingIds = try { repository.getFollowingIds(me.id).toList() } catch (e: Exception) { emptyList() }
+        val ids = (chatIds + followingIds).filter { it.isNotBlank() && it != me.id }.distinct().take(60)
+        return try { repository.getUsersByIds(ids).filter { it.username.isNotBlank() } } catch (e: Exception) { emptyList() }
+    }
+
+    fun shareClipToUsers(clip: Clip, targets: List<User>) {
+        val me = _uiState.value.currentUser ?: return
+        var sent = 0
+        for (target in targets) {
+            if (target.id.isBlank() || target.id == me.id) continue
+            val existing = _uiState.value.chats.firstOrNull { !it.isGroup && it.participant.id == target.id }
+            val convId = existing?.id ?: if (me.id < target.id) "${me.id}_${target.id}" else "${target.id}_${me.id}"
+            pendingChatParticipants[convId] = target
+            sendMessage(convId, "Shared a reel by @${clip.author.username}: ${clip.mediaUrl}")
+            sent++
+        }
+        if (sent > 0) showToast(if (sent == 1) "Reel sent" else "Reel sent to $sent people")
+    }
+
+    fun sendVoiceNote(conversationId: String, file: java.io.File, duration: String) {
+        showToast("Sending voice note…")
+        viewModelScope.launch {
+            val res = com.example.util.CloudinaryUploader.uploadUri(
+                context = getApplication<Application>(),
+                uri = android.net.Uri.fromFile(file)
+            )
+            try { file.delete() } catch (e: Exception) { }
+            val url = res.getOrNull()?.secureUrl
+            if (res.isSuccess && !url.isNullOrBlank()) {
+                sendMessage(conversationId, url, true, duration)
+            } else {
+                showToast("Voice note could not be sent. Please try again.")
+            }
+        }
+    }
+
+    /** Creates a call room, posts the invite into the chat and returns the room link. */
+    fun startCall(conversationId: String, video: Boolean): String {
+        val room = "vynora" + conversationId.filter { it.isLetterOrDigit() }.takeLast(12) +
+            java.lang.Long.toString(System.currentTimeMillis(), 36)
+        val link = "$CALL_SERVER_BASE/$room" + if (video) "" else "#config.startWithVideoMuted=true"
+        sendMessage(conversationId, (if (video) "Started a video call: " else "Started a voice call: ") + link)
+        return link
     }
 
     fun isMutedUser(username: String): Boolean = username in mutedNames()
