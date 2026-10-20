@@ -230,8 +230,9 @@ fun VynoraApp(viewModel: VynoraViewModel) {
                                         onPublishClip = { caption, mediaUrl, music, visibility ->
                                             viewModel.publishClip(caption, mediaUrl, music, visibility = visibility)
                                         },
-                                        onStartBackgroundUpload = { kind, uri, cap, tags, loc, filter, vis, music, close ->
-                                            viewModel.startBackgroundUpload(kind, uri, cap, tags, loc, filter, vis, music, close)
+                                        onClose = { viewModel.selectTab(MainTab.HOME) },
+                                        onStartBackgroundUpload = { kind, uri, cap, tags, loc, filter, vis, music, close, flags ->
+                                            viewModel.startBackgroundUpload(kind, uri, cap, tags, loc, filter, vis, music, close, flags)
                                             viewModel.selectTab(if (kind == "CLIP") MainTab.CLIPS else MainTab.HOME)
                                         },
                                         onRequestAiCaption = { topic, onResult ->
@@ -251,11 +252,11 @@ fun VynoraApp(viewModel: VynoraViewModel) {
                                         onLikeToggle = { clipId -> viewModel.toggleLikeClip(clipId) },
                                         onSaveToggle = { clipId -> viewModel.toggleSaveClip(clipId) },
                                         onFollowToggle = { username -> viewModel.toggleFollowCreator(username) },
-                                        onCommentsClick = { _ ->
-                                            viewModel.showToast("Reel comments are coming soon")
-                                        },
+                                        onCommentsClick = { clipId -> viewModel.openComments(clipId) },
+                                        onUserClick = { uid -> viewModel.openUserProfile(uid) },
                                         onShareClick = { clip -> shareClip = clip },
-                                        onToast = { msg -> viewModel.showToast(msg) }
+                                        onToast = { msg -> viewModel.showToast(msg) },
+                                        onCreateClick = { viewModel.selectTab(MainTab.CREATE) }
                                     )
                                 }
                                 MainTab.PROFILE -> {
@@ -264,6 +265,8 @@ fun VynoraApp(viewModel: VynoraViewModel) {
                                         posts = uiState.posts,
                                         clips = uiState.clips,
                                         isDarkMode = uiState.isDarkMode,
+                                        onOpenPost = { pid -> viewModel.openPostViewer(pid) },
+                                        onOpenClip = { c -> viewModel.openClipViewer(c) },
                                         onOpenSettings = { viewModel.navigateTo(ScreenDestination.Settings) },
                                         onOpenCreatorStudio = { viewModel.navigateTo(ScreenDestination.CreatorAnalytics) },
                                         onOpenAdminPanel = { viewModel.navigateTo(ScreenDestination.AdminPanel) },
@@ -528,6 +531,8 @@ fun VynoraApp(viewModel: VynoraViewModel) {
                         posts = uiState.posts,
                         clips = uiState.clips,
                         isDarkMode = uiState.isDarkMode,
+                        onOpenPost = { pid -> viewModel.openPostViewer(pid) },
+                        onOpenClip = { c -> viewModel.openClipViewer(c) },
                         onOpenSettings = {},
                         onOpenCreatorStudio = {},
                         onOpenAdminPanel = {},
@@ -555,6 +560,35 @@ fun VynoraApp(viewModel: VynoraViewModel) {
                     )
                 }
             }
+            is ScreenDestination.PostViewer -> {
+                PostViewerScreen(
+                    post = uiState.posts.firstOrNull { it.id == screen.postId },
+                    isDarkMode = uiState.isDarkMode,
+                    onBack = { viewModel.navigateBack() },
+                    onLike = { viewModel.toggleLikePost(screen.postId) },
+                    onSave = { viewModel.toggleSavePost(screen.postId) },
+                    onComments = { viewModel.openComments(screen.postId) },
+                    onUserClick = { uid -> viewModel.openUserProfile(uid) }
+                )
+            }
+            is ScreenDestination.ClipViewer -> {
+                val authorClips = uiState.clips.filter { it.author.id == screen.authorId }
+                val startAt = authorClips.indexOfFirst { it.id == screen.clipId }.coerceAtLeast(0)
+                ClipsScreen(
+                    currentUserId = uiState.currentUser?.id ?: "",
+                    onDeleteClip = { clipId -> viewModel.deleteMyClip(clipId); viewModel.navigateBack() },
+                    clips = authorClips,
+                    onLikeToggle = { clipId -> viewModel.toggleLikeClip(clipId) },
+                    onSaveToggle = { clipId -> viewModel.toggleSaveClip(clipId) },
+                    onFollowToggle = { username -> viewModel.toggleFollowCreator(username) },
+                    onCommentsClick = { clipId -> viewModel.openComments(clipId) },
+                    onUserClick = { uid -> viewModel.openUserProfile(uid) },
+                    onShareClick = { clip -> shareClip = clip },
+                    onToast = { msg -> viewModel.showToast(msg) },
+                    onBack = { viewModel.navigateBack() },
+                    initialIndex = startAt
+                )
+            }
             is ScreenDestination.EditProfile -> {
                 EditProfileScreen(
                     user = uiState.currentUser ?: com.example.model.User(),
@@ -572,6 +606,12 @@ fun VynoraApp(viewModel: VynoraViewModel) {
         // 1. Comments Bottom Sheet
         if (uiState.activeCommentsPostId != null) {
             val post = uiState.posts.firstOrNull { it.id == uiState.activeCommentsPostId }
+                ?: uiState.clips.firstOrNull { it.id == uiState.activeCommentsPostId }?.let { c ->
+                    com.example.model.Post(
+                        id = c.id, author = c.author, mediaUrls = listOf(c.mediaUrl),
+                        caption = c.caption, comments = c.comments, isVideo = true
+                    )
+                }
             if (post != null) {
                 CommentsBottomSheet(
                     post = post,
