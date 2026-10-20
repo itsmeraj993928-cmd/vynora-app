@@ -516,7 +516,7 @@ class VynoraRepository(
                             val lastMessageText = doc.getString("lastMessage") ?: ""
                             val msgs = try {
                                 doc.reference.collection("messages").get().await()
-                                    .documents.mapNotNull { m -> try { m.toObject(ChatMessage::class.java) } catch (e: Exception) { null } }
+                                    .documents.mapNotNull { m -> try { m.toObject(ChatMessage::class.java)?.let { cm -> cm.copy(isAudio = (m.getBoolean("isAudio") ?: m.getBoolean("audio") ?: cm.isAudio)) } } catch (e: Exception) { null } }
                                     .sortedBy { it.createdAt }
                             } catch (e: Exception) { emptyList() }
                             val updatedAt = when (val v = doc.get("updatedAt")) {
@@ -1006,6 +1006,21 @@ class VynoraRepository(
             chatRef.collection("messages").document(msg.id).set(msg).await()
         } catch (e: Exception) {
             Log.w("VynoraRepo", "sendChatMessage failed", e)
+        }
+    }
+
+    suspend fun deleteChatMessage(conversationId: String, messageId: String, newLast: ChatMessage?) {
+        try {
+            val chatRef = db.collection("chats").document(conversationId)
+            chatRef.collection("messages").document(messageId).delete().await()
+            val label = when {
+                newLast == null -> ""
+                newLast.isAudio -> "Voice note"
+                else -> newLast.text.take(60)
+            }
+            chatRef.update("lastMessage", label).await()
+        } catch (e: Exception) {
+            Log.w("VynoraRepo", "deleteChatMessage failed", e)
         }
     }
 
