@@ -165,11 +165,11 @@ data class ChatMessage(
     val senderId: String = "",
     val text: String = "",
     val timestamp: String = "",
-    val isAudio: Boolean = false,
+    @get:com.google.firebase.firestore.PropertyName("isAudio") @set:com.google.firebase.firestore.PropertyName("isAudio") var isAudio: Boolean = false,
     val audioDuration: String? = null,
     val mediaUrl: String? = null,
     val reactionEmoji: String? = null,
-    val isRead: Boolean = true,
+    @get:com.google.firebase.firestore.PropertyName("isRead") @set:com.google.firebase.firestore.PropertyName("isRead") var isRead: Boolean = true,
     val createdAt: Long = System.currentTimeMillis()
 )
 
