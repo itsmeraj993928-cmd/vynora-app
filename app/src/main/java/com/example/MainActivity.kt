@@ -384,14 +384,8 @@ fun VynoraApp(viewModel: VynoraViewModel) {
                     onDeleteMessage = { mid -> viewModel.deleteChatMessage(conversation.id, mid) },
                     onSendVoiceNote = { file, dur -> viewModel.sendVoiceNote(conversation.id, file, dur) },
                     onStartCall = { video ->
-                        val link = viewModel.startCall(conversation.id, video)
-                        try {
-                            hostContext.startActivity(
-                                android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(link))
-                            )
-                        } catch (e: Exception) {
-                            viewModel.showToast("Could not open the call")
-                        }
+                        if (conversation.isGroup) viewModel.showToast("Calls work in one-to-one chats")
+                        else viewModel.placeCall(conversation.participant, video)
                     }
                 )
             }
@@ -630,6 +624,26 @@ fun VynoraApp(viewModel: VynoraViewModel) {
                     }
                 )
             }
+        }
+
+        // Calls (full screen, above everything)
+        val activeCall = uiState.activeCall
+        val incomingCall = uiState.incomingCall
+        if (activeCall != null) {
+            CallScreen(
+                call = activeCall,
+                peer = uiState.callPeer,
+                isCaller = activeCall.callerId == uiState.currentUser?.id,
+                onEnd = { viewModel.endCall() },
+                onToast = { msg -> viewModel.showToast(msg) }
+            )
+        } else if (incomingCall != null) {
+            IncomingCallScreen(
+                call = incomingCall,
+                peer = uiState.callPeer,
+                onAccept = { viewModel.acceptCall() },
+                onDecline = { viewModel.declineCall() }
+            )
         }
 
         // 1b. Reel share sheet (in-app, Instagram style)
