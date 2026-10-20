@@ -271,6 +271,7 @@ fun ChatRoomScreen(
     onToast: (String) -> Unit,
     onStartCall: (video: Boolean) -> Unit = {},
     onSendVoiceNote: (File, String) -> Unit = { _, _ -> },
+    onDeleteMessage: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val callContext = androidx.compose.ui.platform.LocalContext.current
@@ -586,6 +587,20 @@ fun ChatRoomScreen(
                     .padding(horizontal = 12.dp, vertical = 6.dp),
                 horizontalArrangement = Arrangement.SpaceAround
             ) {
+                val menuMsg = conversation.messages.firstOrNull { it.id == msgId }
+                if (menuMsg != null && menuMsg.senderId == currentUser.id) {
+                    Text(
+                        text = "🗑 Delete",
+                        fontSize = 14.sp,
+                        color = Color(0xFFEF4444),
+                        modifier = Modifier
+                            .clickable {
+                                onDeleteMessage(msgId)
+                                showReactionMenuForMessageId = null
+                            }
+                            .padding(6.dp)
+                    )
+                }
                 listOf("❤️", "🔥", "🚀", "😂", "👏", "😮").forEach { emoji ->
                     Text(
                         text = emoji,
@@ -672,7 +687,9 @@ fun ChatRoomScreen(
 
             IconButton(
                 onClick = {
-                    if (messageInput.isNotBlank()) {
+                    if (isRecordingAudio) {
+                        stopRecording(true)
+                    } else if (messageInput.isNotBlank()) {
                         onSendMessage(messageInput, false, null)
                         messageInput = ""
                     }
