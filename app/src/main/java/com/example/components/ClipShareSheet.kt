@@ -129,7 +129,13 @@ fun ClipShareSheet(
                                             ),
                                         contentAlignment = Alignment.Center
                                     ) {
-                                        StoryRingAvatar(avatarUrl = u.avatarUrl, size = 66.dp)
+                                        StoryRingAvatar(
+                                            avatarUrl = u.avatarUrl,
+                                            size = 66.dp,
+                                            onClick = {
+                                                selectedIds = if (selected) selectedIds - u.id else selectedIds + u.id
+                                            }
+                                        )
                                     }
                                     if (selected) {
                                         Box(
