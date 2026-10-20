@@ -1347,6 +1347,20 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     // Chats
+    fun deleteChatMessage(conversationId: String, messageId: String) {
+        var newLast: ChatMessage? = null
+        _uiState.update { state ->
+            state.copy(chats = state.chats.map { conv ->
+                if (conv.id == conversationId) {
+                    val left = conv.messages.filterNot { it.id == messageId }
+                    newLast = left.lastOrNull()
+                    conv.copy(messages = left, lastMessage = newLast ?: ChatMessage(text = "", timestamp = ""))
+                } else conv
+            })
+        }
+        viewModelScope.launch { repository.deleteChatMessage(conversationId, messageId, newLast) }
+    }
+
     fun sendMessage(conversationId: String, text: String, isAudio: Boolean = false, audioDuration: String? = null) {
         if (text.isBlank() && !isAudio) return
         val user = _uiState.value.currentUser ?: return
