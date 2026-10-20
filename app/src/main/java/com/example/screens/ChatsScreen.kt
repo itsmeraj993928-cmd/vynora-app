@@ -1,5 +1,17 @@
 package com.example.screens
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.media.MediaPlayer
+import android.media.MediaRecorder
+import android.net.Uri
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
+import kotlinx.coroutines.delay
+import java.io.File
+import android.widget.VideoView
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -26,7 +38,11 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
+import com.example.components.StoryRingAvatar
 import com.example.model.ChatConversation
 import com.example.model.ChatMessage
 import com.example.model.User
@@ -111,24 +127,7 @@ fun ChatsScreen(
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // --- 3. Tabs (Primary / Requests) ---
-        TabRow(
-            selectedTabIndex = selectedTab,
-            containerColor = Color.Transparent,
-            contentColor = VynoraNeonPink,
-            divider = { HorizontalDivider(color = if (isDarkMode) Color(0x22FFFFFF) else Color(0x1F000000)) }
-        ) {
-            Tab(
-                selected = selectedTab == 0,
-                onClick = { selectedTab = 0 },
-                text = { Text("Primary (${chats.size})", fontWeight = FontWeight.Bold, fontSize = 13.sp) }
-            )
-            Tab(
-                selected = selectedTab == 1,
-                onClick = { selectedTab = 1 },
-                text = { Text("Requests (2)", fontWeight = FontWeight.Medium, fontSize = 13.sp) }
-            )
-        }
+        HorizontalDivider(color = if (isDarkMode) Color(0x22FFFFFF) else Color(0x1F000000))
 
         // --- 4. Chat List ---
         val filteredChats = if (searchQuery.isBlank()) chats else {
@@ -199,29 +198,10 @@ private fun ChatConversationRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // Avatar with online green dot
-        Box(modifier = Modifier.size(52.dp)) {
-            Box(
-                modifier = Modifier
-                    .size(52.dp)
-                    .clip(CircleShape)
-            ) {
-                AsyncImage(
-                    model = conversation.participant.avatarUrl,
-                    contentDescription = conversation.participant.username,
-                    modifier = Modifier.fillMaxSize()
-                )
-            }
-            // Online status dot
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .size(13.dp)
-                    .clip(CircleShape)
-                    .background(Color(0xFF10B981))
-                    .border(2.dp, if (isDarkMode) Color(0xFF050509) else Color.White, CircleShape)
-            )
-        }
+        StoryRingAvatar(
+            avatarUrl = conversation.participant.avatarUrl,
+            size = 52.dp
+        )
 
         // Message Preview
         Column(modifier = Modifier.weight(1f)) {
@@ -231,7 +211,7 @@ private fun ChatConversationRow(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = conversation.participant.fullName,
+                    text = conversation.participant.fullName.ifBlank { conversation.participant.username },
                     fontWeight = FontWeight.Bold,
                     fontSize = 14.sp,
                     color = if (isDarkMode) Color.White else Color(0xFF0F172A)
@@ -251,7 +231,7 @@ private fun ChatConversationRow(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = if (conversation.lastMessage.isAudio) "🎤 Voice note (${conversation.lastMessage.audioDuration ?: "0:34"})" else conversation.lastMessage.text,
+                    text = if (conversation.lastMessage.isAudio) "🎤 Voice note (${conversation.lastMessage.audioDuration ?: "0:34"})" else if (parseSharedReel(conversation.lastMessage.text) != null) "🎬 Reel" else parseCallInvite(conversation.lastMessage.text)?.let { if (it.first) "🎥 Video call" else "📞 Voice call" } ?: conversation.lastMessage.text,
                     fontSize = 13.sp,
                     color = if (conversation.unreadCount > 0) (if (isDarkMode) Color.White else Color.Black) else (if (isDarkMode) Color(0xFF94A3B8) else Color(0xFF64748B)),
                     fontWeight = if (conversation.unreadCount > 0) FontWeight.Bold else FontWeight.Normal,
@@ -289,13 +269,119 @@ fun ChatRoomScreen(
     onAddReaction: (messageId: String, emoji: String) -> Unit,
     onBack: () -> Unit,
     onToast: (String) -> Unit,
+    onStartCall: (video: Boolean) -> Unit = {},
+    onSendVoiceNote: (File, String) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier
 ) {
+    val callContext = androidx.compose.ui.platform.LocalContext.current
     var messageInput by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
     var showReactionMenuForMessageId by remember { mutableStateOf<String?>(null) }
     var isRecordingAudio by remember { mutableStateOf(false) }
+    var recorder by remember { mutableStateOf<MediaRecorder?>(null) }
+    var recordFile by remember { mutableStateOf<File?>(null) }
+    var recordStartMs by remember { mutableStateOf(0L) }
+    var recordSeconds by remember { mutableStateOf(0) }
+    var playingMessageId by remember { mutableStateOf<String?>(null) }
+    var player by remember { mutableStateOf<MediaPlayer?>(null) }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            try { player?.release() } catch (e: Exception) { }
+            try { recorder?.release() } catch (e: Exception) { }
+        }
+    }
+
+    fun formatDuration(totalSeconds: Int): String = String.format("%d:%02d", totalSeconds / 60, totalSeconds % 60)
+
+    fun startRecording() {
+        try {
+            val f = File(callContext.cacheDir, "vn_${System.currentTimeMillis()}.m4a")
+            val r = if (Build.VERSION.SDK_INT >= 31) MediaRecorder(callContext) else MediaRecorder()
+            r.setAudioSource(MediaRecorder.AudioSource.MIC)
+            r.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+            r.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+            r.setAudioEncodingBitRate(64000)
+            r.setAudioSamplingRate(44100)
+            r.setOutputFile(f.absolutePath)
+            r.prepare()
+            r.start()
+            recorder = r
+            recordFile = f
+            recordStartMs = System.currentTimeMillis()
+            recordSeconds = 0
+            isRecordingAudio = true
+        } catch (e: Exception) {
+            onToast("Could not start recording")
+        }
+    }
+
+    fun stopRecording(send: Boolean) {
+        val r = recorder
+        val f = recordFile
+        val seconds = ((System.currentTimeMillis() - recordStartMs) / 1000).toInt()
+        isRecordingAudio = false
+        recorder = null
+        recordFile = null
+        var ok = true
+        try { r?.stop() } catch (e: Exception) { ok = false }
+        try { r?.release() } catch (e: Exception) { }
+        if (send && ok && f != null && seconds >= 1) {
+            onSendVoiceNote(f, formatDuration(seconds))
+        } else {
+            try { f?.delete() } catch (e: Exception) { }
+            if (send) onToast("Recording was too short")
+        }
+    }
+
+    val micPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) startRecording() else onToast("Microphone permission is needed to record voice notes")
+    }
+
+    LaunchedEffect(isRecordingAudio) {
+        while (isRecordingAudio) {
+            delay(500)
+            recordSeconds = ((System.currentTimeMillis() - recordStartMs) / 1000).toInt()
+            if (recordSeconds >= 300) stopRecording(true)
+        }
+    }
+
+    fun togglePlay(messageId: String, url: String) {
+        if (playingMessageId == messageId) {
+            try { player?.release() } catch (e: Exception) { }
+            player = null
+            playingMessageId = null
+            return
+        }
+        try { player?.release() } catch (e: Exception) { }
+        try {
+            val mp = MediaPlayer()
+            mp.setDataSource(url)
+            mp.setOnPreparedListener { it.start() }
+            mp.setOnCompletionListener {
+                try { it.release() } catch (e: Exception) { }
+                if (playingMessageId == messageId) {
+                    playingMessageId = null
+                    player = null
+                }
+            }
+            mp.setOnErrorListener { _, _, _ ->
+                playingMessageId = null
+                player = null
+                onToast("Could not play this voice note")
+                true
+            }
+            player = mp
+            playingMessageId = messageId
+            mp.prepareAsync()
+        } catch (e: Exception) {
+            playingMessageId = null
+            player = null
+            onToast("Could not play this voice note")
+        }
+    }
+    var previewReelUrl by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(conversation.messages.size) {
         listState.animateScrollToItem((conversation.messages.size - 1).coerceAtLeast(0))
@@ -312,6 +398,8 @@ fun ChatRoomScreen(
             .windowInsetsPadding(WindowInsets.navigationBars)
             .testTag("chat_room_screen")
     ) {
+        previewReelUrl?.let { u -> ReelPreviewDialog(url = u, onDismiss = { previewReelUrl = null }) }
+
         // --- 1. Top Room Header ---
         Row(
             modifier = Modifier
@@ -333,17 +421,10 @@ fun ChatRoomScreen(
                     )
                 }
 
-                Box(
-                    modifier = Modifier
-                        .size(38.dp)
-                        .clip(CircleShape)
-                ) {
-                    AsyncImage(
-                        model = conversation.participant.avatarUrl,
-                        contentDescription = conversation.participant.username,
-                        modifier = Modifier.fillMaxSize()
-                    )
-                }
+                StoryRingAvatar(
+                    avatarUrl = conversation.participant.avatarUrl,
+                    size = 38.dp
+                )
 
                 Column {
                     Text(
@@ -352,19 +433,14 @@ fun ChatRoomScreen(
                         fontSize = 14.sp,
                         color = if (isDarkMode) Color.White else Color(0xFF0F172A)
                     )
-                    Text(
-                        text = "Active now",
-                        fontSize = 10.sp,
-                        color = Color(0xFF10B981)
-                    )
                 }
             }
 
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                IconButton(onClick = { onToast("Calling @${conversation.participant.username}...") }) {
+                IconButton(onClick = { onStartCall(false) }) {
                     Icon(imageVector = Icons.Outlined.Call, contentDescription = "Call", tint = VynoraNeonCyan)
                 }
-                IconButton(onClick = { onToast("Video calling @${conversation.participant.username}...") }) {
+                IconButton(onClick = { onStartCall(true) }) {
                     Icon(imageVector = Icons.Outlined.Videocam, contentDescription = "Video", tint = VynoraNeonPink)
                 }
             }
@@ -394,7 +470,30 @@ fun ChatRoomScreen(
                             )
                         }
                     ) {
-                        Surface(
+                        val sharedReel = parseSharedReel(msg.text)
+                        val callInvite = parseCallInvite(msg.text)
+                        if (callInvite != null) {
+                            CallInviteCard(
+                                isVideo = callInvite.first,
+                                isMe = isMe,
+                                isDarkMode = isDarkMode,
+                                onJoin = {
+                                    try {
+                                        callContext.startActivity(
+                                            android.content.Intent(android.content.Intent.ACTION_VIEW, Uri.parse(callInvite.second))
+                                        )
+                                    } catch (e: Exception) {
+                                        onToast("Could not open the call")
+                                    }
+                                }
+                            )
+                        } else if (sharedReel != null) {
+                            SharedReelCard(
+                                author = sharedReel.first,
+                                url = sharedReel.second,
+                                onClick = { previewReelUrl = sharedReel.second }
+                            )
+                        } else Surface(
                             shape = RoundedCornerShape(
                                 topStart = 16.dp,
                                 topEnd = 16.dp,
@@ -412,10 +511,12 @@ fun ChatRoomScreen(
                                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Filled.PlayArrow,
+                                        imageVector = if (playingMessageId == msg.id) Icons.Filled.Pause else Icons.Filled.PlayArrow,
                                         contentDescription = "Play",
                                         tint = if (isMe) Color.White else VynoraNeonCyan,
-                                        modifier = Modifier.size(22.dp)
+                                        modifier = Modifier
+                                            .size(26.dp)
+                                            .clickable(enabled = msg.text.startsWith("http")) { togglePlay(msg.id, msg.text) }
                                     )
                                     // Waveform bars simulation
                                     Row(horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -512,18 +613,45 @@ fun ChatRoomScreen(
             // Simulated voice note record button
             IconButton(
                 onClick = {
-                    isRecordingAudio = true
-                    onToast("Recording voice note (0:15)...")
-                    onSendMessage("Voice note", true, "0:15")
+                    if (isRecordingAudio) {
+                        stopRecording(true)
+                    } else if (ContextCompat.checkSelfPermission(callContext, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                        startRecording()
+                    } else {
+                        micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                    }
                 }
             ) {
                 Icon(
-                    imageVector = Icons.Filled.Mic,
+                    imageVector = if (isRecordingAudio) Icons.Filled.Stop else Icons.Filled.Mic,
                     contentDescription = "Voice note",
-                    tint = VynoraNeonCyan
+                    tint = if (isRecordingAudio) Color(0xFFEF4444) else VynoraNeonCyan
                 )
             }
 
+            if (isRecordingAudio) {
+                Row(
+                    modifier = Modifier.weight(1f),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(10.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFFEF4444))
+                    )
+                    Text(
+                        text = "Recording " + formatDuration(recordSeconds) + "  (tap ■ to send)",
+                        fontSize = 13.sp,
+                        color = if (isDarkMode) Color.White else Color(0xFF0F172A)
+                    )
+                    Spacer(modifier = Modifier.weight(1f))
+                    IconButton(onClick = { stopRecording(false) }) {
+                        Icon(Icons.Outlined.Delete, contentDescription = "Cancel", tint = Color(0xFFEF4444))
+                    }
+                }
+            } else {
             OutlinedTextField(
                 value = messageInput,
                 onValueChange = { messageInput = it },
@@ -540,6 +668,8 @@ fun ChatRoomScreen(
                 )
             )
 
+            }
+
             IconButton(
                 onClick = {
                     if (messageInput.isNotBlank()) {
@@ -553,6 +683,182 @@ fun ChatRoomScreen(
                     contentDescription = "Send",
                     tint = VynoraNeonPink
                 )
+            }
+        }
+    }
+}
+
+
+/** Parses "Shared a reel by @author: https://..." into (author, url). */
+private fun parseSharedReel(text: String): Pair<String, String>? {
+    val prefix = "Shared a reel by @"
+    if (!text.startsWith(prefix)) return null
+    val rest = text.removePrefix(prefix)
+    val idx = rest.indexOf(": ")
+    if (idx <= 0) return null
+    val author = rest.substring(0, idx)
+    val url = rest.substring(idx + 2).trim()
+    if (!url.startsWith("http")) return null
+    return author to url
+}
+
+private fun reelThumbnailUrl(videoUrl: String): String {
+    val withoutExt = videoUrl.substringBeforeLast('.', videoUrl)
+    return if (videoUrl.contains("/video/upload/")) {
+        withoutExt.replace("/video/upload/", "/video/upload/so_0,w_480,h_720,c_fill/") + ".jpg"
+    } else {
+        withoutExt + ".jpg"
+    }
+}
+
+@Composable
+private fun SharedReelCard(author: String, url: String, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .width(210.dp)
+            .height(300.dp)
+            .clip(RoundedCornerShape(20.dp))
+            .background(Color.Black)
+            .clickable(onClick = onClick)
+    ) {
+        AsyncImage(
+            model = reelThumbnailUrl(url),
+            contentDescription = "Reel",
+            modifier = Modifier.fillMaxSize(),
+            contentScale = androidx.compose.ui.layout.ContentScale.Crop
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(
+                    androidx.compose.ui.graphics.Brush.verticalGradient(
+                        listOf(Color.Black.copy(alpha = 0.6f), Color.Transparent)
+                    )
+                )
+                .padding(10.dp)
+        ) {
+            Text(
+                text = "@$author",
+                color = Color.White,
+                fontWeight = FontWeight.Bold,
+                fontSize = 13.sp
+            )
+        }
+        Box(
+            modifier = Modifier
+                .align(Alignment.Center)
+                .size(52.dp)
+                .clip(CircleShape)
+                .background(Color.Black.copy(alpha = 0.55f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.Filled.PlayArrow,
+                contentDescription = "Play",
+                tint = Color.White,
+                modifier = Modifier.size(32.dp)
+            )
+        }
+        Icon(
+            imageVector = Icons.Outlined.Videocam,
+            contentDescription = null,
+            tint = Color.White,
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .padding(10.dp)
+                .size(20.dp)
+        )
+    }
+}
+
+@Composable
+private fun ReelPreviewDialog(url: String, onDismiss: () -> Unit) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black)
+        ) {
+            AndroidView(
+                modifier = Modifier.fillMaxSize(),
+                factory = { ctx ->
+                    VideoView(ctx).apply {
+                        setVideoURI(Uri.parse(url))
+                        setOnPreparedListener { mp ->
+                            mp.isLooping = true
+                            start()
+                        }
+                    }
+                }
+            )
+            IconButton(
+                onClick = onDismiss,
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .windowInsetsPadding(WindowInsets.statusBars)
+                    .padding(8.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Close,
+                    contentDescription = "Close",
+                    tint = Color.White
+                )
+            }
+        }
+    }
+}
+
+
+/** Parses "Started a video call: <url>" / "Started a voice call: <url>" into (isVideo, url). */
+private fun parseCallInvite(text: String): Pair<Boolean, String>? {
+    val video = "Started a video call: "
+    val voice = "Started a voice call: "
+    return when {
+        text.startsWith(video) && text.removePrefix(video).trim().startsWith("http") ->
+            true to text.removePrefix(video).trim()
+        text.startsWith(voice) && text.removePrefix(voice).trim().startsWith("http") ->
+            false to text.removePrefix(voice).trim()
+        else -> null
+    }
+}
+
+@Composable
+private fun CallInviteCard(isVideo: Boolean, isMe: Boolean, isDarkMode: Boolean, onJoin: () -> Unit) {
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = if (isDarkMode) Color(0xFF1E2235) else Color(0xFFE2E8F0)
+    ) {
+        Column(modifier = Modifier.padding(14.dp).width(200.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Icon(
+                    imageVector = if (isVideo) Icons.Outlined.Videocam else Icons.Outlined.Call,
+                    contentDescription = null,
+                    tint = if (isVideo) VynoraNeonPink else VynoraNeonCyan
+                )
+                Text(
+                    text = if (isVideo) "Video call" else "Voice call",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp,
+                    color = if (isDarkMode) Color.White else Color(0xFF0F172A)
+                )
+            }
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = if (isMe) "You started a call" else "Started a call",
+                fontSize = 12.sp,
+                color = if (isDarkMode) Color(0xFF94A3B8) else Color(0xFF64748B)
+            )
+            Spacer(modifier = Modifier.height(10.dp))
+            Button(
+                onClick = onJoin,
+                modifier = Modifier.fillMaxWidth().height(38.dp),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = VynoraNeonCyan)
+            ) {
+                Text("Join", fontWeight = FontWeight.Bold, color = Color.Black)
             }
         }
     }
