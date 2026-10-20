@@ -378,6 +378,7 @@ fun VynoraApp(viewModel: VynoraViewModel) {
                     },
                     onBack = { viewModel.navigateBack() },
                     onToast = { msg -> viewModel.showToast(msg) },
+                    onDeleteMessage = { mid -> viewModel.deleteChatMessage(conversation.id, mid) },
                     onSendVoiceNote = { file, dur -> viewModel.sendVoiceNote(conversation.id, file, dur) },
                     onStartCall = { video ->
                         val link = viewModel.startCall(conversation.id, video)
