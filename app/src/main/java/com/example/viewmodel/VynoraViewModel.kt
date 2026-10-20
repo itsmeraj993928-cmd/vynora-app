@@ -47,6 +47,8 @@ sealed class ScreenDestination {
     data class Legal(val docType: String) : ScreenDestination()
     data class UserProfile(val userId: String) : ScreenDestination()
     data class FollowList(val userId: String, val username: String, val tab: Int) : ScreenDestination()
+    data class PostViewer(val postId: String) : ScreenDestination()
+    data class ClipViewer(val clipId: String, val authorId: String) : ScreenDestination()
 }
 
 enum class MainTab {
@@ -781,6 +783,28 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
         _uiState.update { it.copy(activeCommentsPostId = null, highlightCommentId = null) }
     }
 
+    private fun updateClipComments(clipId: String, transform: (List<Comment>) -> List<Comment>): List<Comment>? {
+        var result: List<Comment>? = null
+        _uiState.update { state ->
+            state.copy(clips = state.clips.map { c ->
+                if (c.id == clipId) {
+                    val list = transform(c.comments)
+                    result = list
+                    c.copy(comments = list, commentsCount = list.size)
+                } else c
+            })
+        }
+        return result
+    }
+
+    fun openClipViewer(clip: Clip) {
+        navigateTo(ScreenDestination.ClipViewer(clip.id, clip.author.id))
+    }
+
+    fun openPostViewer(postId: String) {
+        navigateTo(ScreenDestination.PostViewer(postId))
+    }
+
     fun addComment(postId: String, text: String, replyToId: String? = null) {
         if (text.isBlank()) return
         val user = _uiState.value.currentUser ?: return
@@ -804,6 +828,13 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
             isLiked = false
         )
 
+        val targetClip = _uiState.value.clips.firstOrNull { it.id == postId }
+        if (targetClip != null) {
+            updateClipComments(postId) { listOf(newComment) + it }
+            viewModelScope.launch { repository.saveClipComment(postId, newComment, targetClip.author.id) }
+            return
+        }
+
         _uiState.update { state ->
             val updated = state.posts.map { post ->
                 if (post.id == postId) {
@@ -817,6 +848,17 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun toggleLikeComment(postId: String, commentId: String) {
+        if (_uiState.value.clips.any { it.id == postId }) {
+            updateClipComments(postId) { list ->
+                list.map { c ->
+                    if (c.id == commentId) {
+                        val liked = !c.isLiked
+                        c.copy(isLiked = liked, likesCount = if (liked) c.likesCount + 1 else maxOf(0, c.likesCount - 1))
+                    } else c
+                }
+            }
+            return
+        }
         _uiState.update { state ->
             val updated = state.posts.map { post ->
                 if (post.id == postId) {
@@ -837,6 +879,13 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun pinComment(postId: String, commentId: String) {
+        if (_uiState.value.clips.any { it.id == postId }) {
+            updateClipComments(postId) { list ->
+                list.map { c -> if (c.id == commentId) c.copy(isPinned = !c.isPinned) else c.copy(isPinned = false) }
+                    .sortedByDescending { it.isPinned }
+            }
+            return
+        }
         _uiState.update { state ->
             val updated = state.posts.map { post ->
                 if (post.id == postId) {
@@ -852,6 +901,12 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun deleteComment(postId: String, commentId: String) {
+        if (_uiState.value.clips.any { it.id == postId }) {
+            val left = updateClipComments(postId) { list -> list.filterNot { it.id == commentId } }
+            if (left != null) viewModelScope.launch { repository.setClipComments(postId, left) }
+            showToast("Comment deleted")
+            return
+        }
         _uiState.update { state ->
             val updated = state.posts.map { post ->
                 if (post.id == postId) post.copy(comments = post.comments.filterNot { it.id == commentId })
@@ -1145,7 +1200,8 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
         filterName: String?,
         visibility: String,
         music: String,
-        closeFriends: Boolean
+        closeFriends: Boolean,
+        flags: Set<String> = emptySet()
     ) {
         val current = _uploadStatus.value
         if (current != null && !current.failed) {
@@ -1176,7 +1232,10 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
                     } else {
                         val publicId = result?.publicId ?: ""
                         when (kind) {
-                            "CLIP" -> publishClip(caption, url, music, cloudinaryPublicId = publicId, visibility = visibility)
+                            "CLIP" -> publishClip(
+                                caption, url, music, cloudinaryPublicId = publicId, visibility = visibility,
+                                hideLikes = "HIDE_LIKES" in flags, hideShares = "HIDE_SHARES" in flags, commentsOff = "NO_COMMENTS" in flags
+                            )
                             "MOMENT" -> publishMoment(caption, url, music, closeFriends, visibility)
                             else -> publishPost(
                                 caption, hashtags, listOf(url), location, filterName,
@@ -1275,7 +1334,10 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
         musicTitle: String = "Cyber Drift - Ambient Wave",
         musicArtist: String = "VYNORA Audio",
         cloudinaryPublicId: String = "",
-        visibility: String = "PUBLIC"
+        visibility: String = "PUBLIC",
+        hideLikes: Boolean = false,
+        hideShares: Boolean = false,
+        commentsOff: Boolean = false
     ) {
         val user = _uiState.value.currentUser ?: return
         val newClip = Clip(
@@ -1284,7 +1346,10 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
             mediaUrl = mediaUrl,
             caption = caption,
             musicTitle = musicTitle,
-            musicArtist = musicArtist,
+            musicArtist = if (musicTitle == "Original audio") user.username else musicArtist,
+            hideLikeCount = hideLikes,
+            hideShareCount = hideShares,
+            commentsOff = commentsOff,
             likesCount = 0,
             commentsCount = 0,
             sharesCount = 0,
