@@ -143,12 +143,19 @@ object CloudinaryUploader {
         onProgress: (Int) -> Unit = {}
     ): Result<CloudinaryUploadResult> = withContext(Dispatchers.IO) {
         val resolver = context.contentResolver
-        val mimeType = try { resolver.getType(uri) } catch (e: Exception) { null } ?: "image/jpeg"
-        val isVideo = mimeType.contains("video")
+        val guessedFromName: String? = when (uri.lastPathSegment?.substringAfterLast('.', "")?.lowercase()) {
+            "m4a", "mp4a", "aac" -> "audio/mp4"
+            "mp3" -> "audio/mpeg"
+            "mp4" -> "video/mp4"
+            else -> null
+        }
+        val mimeType = (try { resolver.getType(uri) } catch (e: Exception) { null }) ?: guessedFromName ?: "image/jpeg"
+        val isAudio = mimeType.startsWith("audio")
+        val isVideo = mimeType.contains("video") || isAudio
         val total: Long = try {
             resolver.openAssetFileDescriptor(uri, "r")?.use { it.length } ?: -1L
         } catch (e: Exception) { -1L }
-        val filename = "upload_${System.currentTimeMillis()}." + (if (isVideo) "mp4" else "jpg")
+        val filename = "upload_${System.currentTimeMillis()}." + (if (isAudio) "m4a" else if (isVideo) "mp4" else "jpg")
         val mediaType = mimeType.toMediaTypeOrNull()
 
         var attempt = 0
