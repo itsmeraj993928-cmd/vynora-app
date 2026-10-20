@@ -238,3 +238,15 @@ data class CreatorStats(
         "Thu" to 0, "Fri" to 0, "Sat" to 0, "Sun" to 0
     )
 )
+
+
+/** A voice/video call between two people (stored in Firestore "calls"). */
+data class CallInfo(
+    val id: String = "",
+    val callerId: String = "",
+    val calleeId: String = "",
+    val video: Boolean = false,
+    val status: String = "RINGING", // RINGING, ACCEPTED, DECLINED, CANCELED, MISSED, ENDED
+    val channel: String = "",
+    val createdAt: Long = 0L
+)
