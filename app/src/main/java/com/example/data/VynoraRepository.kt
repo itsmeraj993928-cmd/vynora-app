@@ -1019,6 +1019,49 @@ class VynoraRepository(
         }
     }
 
+    suspend fun createCall(call: CallInfo) {
+        try {
+            db.collection("calls").document(call.id).set(call).await()
+        } catch (e: Exception) {
+            Log.w("VynoraRepo", "createCall failed", e)
+        }
+    }
+
+    suspend fun updateCallStatus(callId: String, status: String) {
+        try {
+            db.collection("calls").document(callId).update("status", status).await()
+        } catch (e: Exception) {
+            Log.w("VynoraRepo", "updateCallStatus failed", e)
+        }
+    }
+
+    fun observeCall(callId: String): Flow<CallInfo?> = callbackFlow {
+        val listener = db.collection("calls").document(callId).addSnapshotListener { snap, error ->
+            if (error != null) return@addSnapshotListener
+            trySend(snap?.toObject(CallInfo::class.java))
+        }
+        awaitClose { listener.remove() }
+    }
+
+    /** Emits the newest call that is ringing for this user (started in the last minute), or null. */
+    fun observeIncomingCalls(userId: String): Flow<CallInfo?> = callbackFlow {
+        val listener = db.collection("calls")
+            .whereEqualTo("calleeId", userId)
+            .whereEqualTo("status", "RINGING")
+            .addSnapshotListener { snap, error ->
+                if (error != null) {
+                    Log.w("VynoraRepo", "incoming calls listener error", error)
+                    return@addSnapshotListener
+                }
+                val now = System.currentTimeMillis()
+                val fresh = snap?.toObjects(CallInfo::class.java)
+                    ?.filter { now - it.createdAt < 60_000L }
+                    ?.maxByOrNull { it.createdAt }
+                trySend(fresh)
+            }
+        awaitClose { listener.remove() }
+    }
+
     suspend fun sendChatMessage(conversationId: String, me: User, otherId: String, msg: ChatMessage) {
         try {
             val chatRef = db.collection("chats").document(conversationId)
