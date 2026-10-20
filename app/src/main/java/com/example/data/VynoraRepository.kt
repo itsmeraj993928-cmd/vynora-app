@@ -991,6 +991,34 @@ class VynoraRepository(
         writeNotification("comment_${comment.id}", postAuthorId, NotificationType.COMMENT, comment.author, comment.text.take(60), postId)
     }
 
+    suspend fun saveClipComment(clipId: String, comment: Comment, clipAuthorId: String) {
+        try {
+            val c = comment.copy(author = slimUser(comment.author))
+            db.collection("clips").document(clipId).update(
+                mapOf(
+                    "comments" to FieldValue.arrayUnion(c),
+                    "commentsCount" to FieldValue.increment(1)
+                )
+            ).await()
+        } catch (e: Exception) {
+            Log.w("VynoraRepo", "saveClipComment failed", e)
+        }
+        writeNotification("comment_${comment.id}", clipAuthorId, NotificationType.COMMENT, comment.author, comment.text.take(60), clipId)
+    }
+
+    suspend fun setClipComments(clipId: String, comments: List<Comment>) {
+        try {
+            db.collection("clips").document(clipId).update(
+                mapOf(
+                    "comments" to comments.map { it.copy(author = slimUser(it.author)) },
+                    "commentsCount" to comments.size
+                )
+            ).await()
+        } catch (e: Exception) {
+            Log.w("VynoraRepo", "setClipComments failed", e)
+        }
+    }
+
     suspend fun sendChatMessage(conversationId: String, me: User, otherId: String, msg: ChatMessage) {
         try {
             val chatRef = db.collection("chats").document(conversationId)
