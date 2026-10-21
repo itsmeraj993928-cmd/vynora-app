@@ -412,7 +412,7 @@ fun VynoraApp(viewModel: VynoraViewModel) {
                     onSendVoiceNote = { file, dur -> viewModel.sendVoiceNote(conversation.id, file, dur) },
                     onStartCall = { video ->
                         if (conversation.isGroup) viewModel.showToast("Calls work in one-to-one chats")
-                        else viewModel.placeCall(conversation.participant, video)
+                        else viewModel.placeCall(conversation.participant, video, conversation.id)
                     }
                 )
             }
