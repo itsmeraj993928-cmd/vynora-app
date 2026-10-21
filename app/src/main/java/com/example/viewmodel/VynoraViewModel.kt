@@ -231,6 +231,8 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
                     if (call == null) {
                         if (st.incomingCall != null && st.activeCall == null) {
                             _uiState.update { it.copy(incomingCall = null, callPeer = null) }
+                            incomingTimeoutJob?.cancel()
+                            cancelCallNotification()
                         }
                         return@collect
                     }
@@ -242,6 +244,16 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
                     val peer = try { repository.getUserProfile(call.callerId) } catch (e: Exception) { null }
                         ?: User(id = call.callerId, username = "Someone")
                     _uiState.update { it.copy(incomingCall = call, callPeer = peer.copy(id = call.callerId)) }
+                    showIncomingCallNotification(call, peer)
+                    incomingTimeoutJob?.cancel()
+                    incomingTimeoutJob = viewModelScope.launch {
+                        delay(45_000)
+                        if (_uiState.value.incomingCall?.id == call.id) {
+                            repository.updateCallStatus(call.id, "MISSED")
+                            _uiState.update { it.copy(incomingCall = null, callPeer = null) }
+                            cancelCallNotification()
+                        }
+                    }
                 }
             }
             launch {
@@ -1035,9 +1047,63 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
 
     // ---- In-app voice / video calls (Agora for media, Firestore "calls" for ringing) ----
     private var callWatchJob: kotlinx.coroutines.Job? = null
+    private var incomingTimeoutJob: kotlinx.coroutines.Job? = null
+
+    private fun cancelCallNotification() {
+        try {
+            getApplication<Application>().getSystemService(android.app.NotificationManager::class.java).cancel(4242)
+        } catch (e: Exception) { }
+    }
+
+    /** When the app is in the background (but still running), show a heads-up "incoming call" notification. */
+    private fun showIncomingCallNotification(call: CallInfo, peer: User) {
+        if (AppForeground.inForeground) return
+        val app = getApplication<Application>()
+        try {
+            if (android.os.Build.VERSION.SDK_INT >= 33 &&
+                androidx.core.content.ContextCompat.checkSelfPermission(app, android.Manifest.permission.POST_NOTIFICATIONS)
+                != android.content.pm.PackageManager.PERMISSION_GRANTED
+            ) return
+            val nm = app.getSystemService(android.app.NotificationManager::class.java)
+            if (android.os.Build.VERSION.SDK_INT >= 26) {
+                val ch = android.app.NotificationChannel("calls_v1", "Calls", android.app.NotificationManager.IMPORTANCE_HIGH)
+                ch.setSound(
+                    android.media.RingtoneManager.getDefaultUri(android.media.RingtoneManager.TYPE_RINGTONE),
+                    android.media.AudioAttributes.Builder()
+                        .setUsage(android.media.AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
+                        .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                        .build()
+                )
+                ch.enableVibration(true)
+                nm.createNotificationChannel(ch)
+            }
+            val launch = app.packageManager.getLaunchIntentForPackage(app.packageName)?.apply {
+                flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP
+            } ?: return
+            val pi = android.app.PendingIntent.getActivity(
+                app, 0, launch,
+                android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT
+            )
+            val name = peer.fullName.ifBlank { peer.username }
+            val n = androidx.core.app.NotificationCompat.Builder(app, "calls_v1")
+                .setSmallIcon(android.R.drawable.sym_call_incoming)
+                .setContentTitle(name)
+                .setContentText(if (call.video) "Incoming video call" else "Incoming voice call")
+                .setPriority(androidx.core.app.NotificationCompat.PRIORITY_HIGH)
+                .setCategory(androidx.core.app.NotificationCompat.CATEGORY_CALL)
+                .setAutoCancel(true)
+                .setTimeoutAfter(45_000)
+                .setContentIntent(pi)
+                .setFullScreenIntent(pi, true)
+                .build()
+            nm.notify(4242, n)
+        } catch (e: Exception) { }
+    }
     private var ringTimeoutJob: kotlinx.coroutines.Job? = null
 
     private fun clearCallLocally() {
+        incomingTimeoutJob?.cancel(); incomingTimeoutJob = null
+        cancelCallNotification()
         callWatchJob?.cancel(); callWatchJob = null
         ringTimeoutJob?.cancel(); ringTimeoutJob = null
         _uiState.update { it.copy(activeCall = null, incomingCall = null, callPeer = null) }
@@ -1093,6 +1159,7 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
 
     fun acceptCall() {
         val c = _uiState.value.incomingCall ?: return
+        incomingTimeoutJob?.cancel(); cancelCallNotification()
         _uiState.update { it.copy(activeCall = c.copy(status = "ACCEPTED"), incomingCall = null) }
         viewModelScope.launch { repository.updateCallStatus(c.id, "ACCEPTED") }
         watchCall(c.id)
@@ -1100,6 +1167,7 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
 
     fun declineCall() {
         val c = _uiState.value.incomingCall ?: return
+        incomingTimeoutJob?.cancel(); cancelCallNotification()
         _uiState.update { it.copy(incomingCall = null, callPeer = null) }
         viewModelScope.launch { repository.updateCallStatus(c.id, "DECLINED") }
     }
@@ -1363,11 +1431,6 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
 
     fun publishMoment(textOverlay: String, mediaUrl: String, musicTrack: String?, isCloseFriends: Boolean, visibility: String = "PUBLIC") {
         val user = _uiState.value.currentUser ?: return
-        if (!user.isEmailVerified && !user.isOfficial) {
-            showToast("Please verify your email before posting moments.")
-            return
-        }
-
         val newMoment = Moment(
             id = "m_${System.currentTimeMillis()}",
             author = user,
@@ -1382,7 +1445,8 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
         _uiState.update { state ->
             state.copy(moments = listOf(newMoment) + state.moments)
         }
-        showToast("Moment published! Active for 24 hours 🕒")
+        viewModelScope.launch { repository.saveMoment(newMoment) }
+        showToast("Your story is live for 24 hours")
     }
 
     // Create Post
@@ -1714,4 +1778,9 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
             showToast("Post removed by Admin")
         }
     }
+}
+
+/** True while the app screen is visible (used to decide if a call notification is needed). */
+object AppForeground {
+    @Volatile var inForeground: Boolean = true
 }
