@@ -30,6 +30,7 @@ data class User(
     val hideFollowersCount: Boolean = false,
     val isAiGeneratedProfile: Boolean = false,
     val usernameLastChangedAt: Long = 0L,
+    val nameLastChangedAt: Long = 0L,
     val termsAccepted: Boolean = true,
     val termsVersion: String = "1.0",
     val termsAcceptedAt: Long = 0L,
@@ -131,6 +132,7 @@ data class Moment(
     val mediaUrl: String = "",
     val textOverlay: String? = null,
     val musicTrack: String? = null,
+    val musicUrl: String = "",
     val timestamp: String = "",
     val createdAt: Long = System.currentTimeMillis(),
     val expiresAt: Long = System.currentTimeMillis() + (24 * 60 * 60 * 1000L),
@@ -196,7 +198,10 @@ data class SavedAccount(
     val id: String = "",
     val username: String = "",
     val identifier: String = "",
-    val avatarUrl: String = ""
+    val avatarUrl: String = "",
+    val isGoogle: Boolean = false,
+    /** The real Firebase login email (phone accounts use number@phone.vynora.app) */
+    val authEmail: String = ""
 )
 
 data class NotificationItem(

@@ -20,6 +20,7 @@ import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.GoogleAuthProvider
 import com.google.firebase.auth.auth
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -279,7 +280,7 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
         val arr = org.json.JSONArray(accountPrefs.getString("list", "[]"))
         (0 until arr.length()).map {
             val o = arr.getJSONObject(it)
-            SavedAccount(o.getString("id"), o.getString("username"), o.getString("identifier"), o.optString("avatarUrl", ""))
+            SavedAccount(o.getString("id"), o.getString("username"), o.getString("identifier"), o.optString("avatarUrl", ""), o.optBoolean("isGoogle", false), o.optString("authEmail", ""))
         }
     } catch (e: Exception) { emptyList() }
 
@@ -288,34 +289,70 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
             val identifier = if (authEmail.endsWith("@phone.vynora.app"))
                 authEmail.substringBefore("@").substringBefore(".") else authEmail
             val avatar = if (user.avatarUrl.length < 300_000) user.avatarUrl else ""
+            val isGoogle = auth.currentUser?.providerData?.any { it.providerId == "google.com" } == true &&
+                auth.currentUser?.providerData?.none { it.providerId == "password" } == true
             val updated = (_savedAccounts.value.filterNot { it.id == user.id } +
-                SavedAccount(user.id, user.username, identifier, avatar)).takeLast(5)
+                SavedAccount(user.id, user.username, identifier, avatar, isGoogle, authEmail)).takeLast(5)
             _savedAccounts.value = updated
             val arr = org.json.JSONArray()
             updated.forEach {
                 arr.put(org.json.JSONObject().put("id", it.id).put("username", it.username)
-                    .put("identifier", it.identifier).put("avatarUrl", it.avatarUrl))
+                    .put("identifier", it.identifier).put("avatarUrl", it.avatarUrl).put("isGoogle", it.isGoogle).put("authEmail", it.authEmail))
             }
             accountPrefs.edit().putString("list", arr.toString()).apply()
         } catch (e: Exception) { }
     }
 
+    /** Account whose password we must ask for (small dialog) because no saved login exists yet. */
+    private val _switchPasswordFor = MutableStateFlow<SavedAccount?>(null)
+    val switchPasswordFor: StateFlow<SavedAccount?> = _switchPasswordFor.asStateFlow()
+
+    fun dismissSwitchPassword() { _switchPasswordFor.value = null }
+
+    /**
+     * One-tap switch. If a saved login exists we sign in directly (the current account stays
+     * logged in until the new one succeeds). If not, we ask only for the password in a small
+     * dialog instead of sending the user to the full Sign In screen.
+     */
     fun switchAccount(accountId: String, identifier: String) {
+        val acc = _savedAccounts.value.firstOrNull { it.id == accountId }
+            ?: SavedAccount(id = accountId, identifier = identifier)
         val cred = com.example.util.CredentialVault.get(getApplication(), accountId)
-        if (cred == null) {
-            // no saved login for this account: go to login screen with the id filled in
-            prefillIdentifier = identifier
-            signOut()
-            return
-        }
-        signOut()
-        signInWithEmail(
-            email = cred.first,
-            pass = cred.second,
-            onSuccess = { },
-            onError = {
+        when {
+            cred != null -> signInForSwitch(acc, cred.first, cred.second)
+            acc.isGoogle -> {
+                // Google accounts have no password: open the login screen so "Sign in with Google" can be used
                 prefillIdentifier = identifier
-                showToast("Could not log in. Please enter your password again")
+                showToast("Use \"Sign in with Google\" for @${acc.username}")
+                signOut()
+            }
+            else -> _switchPasswordFor.value = acc
+        }
+    }
+
+    fun submitSwitchPassword(password: String) {
+        val acc = _switchPasswordFor.value ?: return
+        val loginId = acc.authEmail.ifBlank {
+            val id = acc.identifier.trim()
+            if (id.contains("@")) id else {
+                // old saved phone accounts only kept the number: rebuild the hidden login email
+                var d = id.filter { it.isDigit() }
+                if (d.length == 10) d = "91$d"
+                "$d@phone.vynora.app"
+            }
+        }
+        signInForSwitch(acc, loginId, password)
+    }
+
+    private fun signInForSwitch(acc: SavedAccount, loginId: String, password: String) {
+        signInWithEmail(
+            email = loginId,
+            pass = password,
+            onSuccess = { _switchPasswordFor.value = null },
+            onError = {
+                // saved password is missing/outdated (or no internet): ask for it in the small dialog
+                _switchPasswordFor.value = acc
+                showToast("Could not log in to @${acc.username}. Check password and internet")
             }
         )
     }
@@ -1448,14 +1485,36 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
         job()
     }
 
+    // --- Story viewers ---
+    private val _momentViewers = MutableStateFlow<List<User>>(emptyList())
+    val momentViewers: StateFlow<List<User>> = _momentViewers.asStateFlow()
+    private var viewersJob: Job? = null
+    private val viewedMomentIds = mutableSetOf<String>()
+
+    /** Call when a story is shown. Saves a view for others' stories, or live-loads viewers for my own. */
+    fun onMomentShown(moment: Moment) {
+        val me = _uiState.value.currentUser ?: return
+        viewersJob?.cancel()
+        _momentViewers.value = emptyList()
+        if (moment.author.id == me.id) {
+            viewersJob = viewModelScope.launch {
+                repository.observeMomentViewers(moment.id).collect { _momentViewers.value = it }
+            }
+        } else if (viewedMomentIds.add(moment.id)) {
+            viewModelScope.launch { repository.recordMomentView(moment.id, me) }
+        }
+    }
+
     fun publishMoment(textOverlay: String, mediaUrl: String, musicTrack: String?, isCloseFriends: Boolean, visibility: String = "PUBLIC") {
         val user = _uiState.value.currentUser ?: return
+        val (musicLabel, musicUrl) = com.example.util.MusicTrack.unpack(musicTrack)
         val newMoment = Moment(
             id = "m_${System.currentTimeMillis()}",
             author = user,
             mediaUrl = mediaUrl,
             textOverlay = textOverlay,
-            musicTrack = musicTrack,
+            musicTrack = musicLabel.ifBlank { null },
+            musicUrl = musicUrl,
             timestamp = "Just now",
             isCloseFriendsOnly = isCloseFriends,
             viewersCount = 0,

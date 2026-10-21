@@ -865,6 +865,12 @@ object VynoraStrings {
         AppLanguage.URDU -> "صارف نام صرف ہر 14 دن میں ایک بار تبدیل کیا جا سکتا ہے ($daysRemaining دن باقی)"
     }
 
+    fun nameCooldownWarning(daysRemaining: Int, lang: AppLanguage): String = when (lang) {
+        AppLanguage.ENGLISH -> "Name can only be changed once every 14 days ($daysRemaining days remaining)"
+        AppLanguage.HINDI -> "नाम हर 14 दिनों में केवल एक बार बदला जा सकता है ($daysRemaining दिन शेष)"
+        AppLanguage.URDU -> "نام صرف ہر 14 دن میں ایک بار تبدیل کیا جا سکتا ہے ($daysRemaining دن باقی)"
+    }
+
     fun createAccount(lang: AppLanguage): String = when (lang) {
         AppLanguage.ENGLISH -> "Create Account"
         AppLanguage.HINDI -> "खाता बनाएं"

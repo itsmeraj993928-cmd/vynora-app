@@ -111,6 +111,8 @@ open class MainActivity : ComponentActivity() {
 fun VynoraApp(viewModel: VynoraViewModel) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val savedAccountsList by viewModel.savedAccounts.collectAsStateWithLifecycle()
+    val switchPasswordFor by viewModel.switchPasswordFor.collectAsStateWithLifecycle()
+    val momentViewers by viewModel.momentViewers.collectAsStateWithLifecycle()
     var shareClip by remember { mutableStateOf<com.example.model.Clip?>(null) }
 
     // Handle Android system back press
@@ -308,6 +310,9 @@ fun VynoraApp(viewModel: VynoraViewModel) {
                                         onSwitchAccount = { accId, ident -> viewModel.switchAccount(accId, ident) },
                                         onOpenFollowList = { tab -> uiState.currentUser?.let { viewModel.openFollowList(it.id, it.username, tab) } },
                                         onAddAccount = { viewModel.addAccount() },
+                                        switchPasswordFor = switchPasswordFor,
+                                        onSubmitSwitchPassword = { pw -> viewModel.submitSwitchPassword(pw) },
+                                        onDismissSwitchPassword = { viewModel.dismissSwitchPassword() },
                                         onToast = { msg -> viewModel.showToast(msg) }
                                     )
                                 }
@@ -370,7 +375,10 @@ fun VynoraApp(viewModel: VynoraViewModel) {
                         val targetChatId = uiState.chats.firstOrNull()?.id ?: "chat_${com.example.util.VynoraOfficial.OFFICIAL_USER_ID}"
                         viewModel.sendMessage(targetChatId, "Replied to moment: $text")
                     },
-                    onToast = { msg -> viewModel.showToast(msg) }
+                    onToast = { msg -> viewModel.showToast(msg) },
+                    viewers = momentViewers,
+                    onMomentShown = { m -> viewModel.onMomentShown(m) },
+                    onOpenProfile = { uid -> viewModel.openUserProfile(uid) }
                 )
             }
             is ScreenDestination.ChatsList -> {

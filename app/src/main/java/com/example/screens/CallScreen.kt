@@ -2,7 +2,6 @@ package com.example.screens
 
 import android.Manifest
 import android.content.pm.PackageManager
-import android.media.RingtoneManager
 import android.view.SurfaceView
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -147,17 +146,13 @@ fun CallScreen(
         }
     }
 
-    // Ringback tone for the caller while the other phone is ringing (like Instagram)
-    val ringing = isCaller && call.status == "RINGING" && call.delivered && remoteUid == 0
+    // Ringback tone for the caller while the other phone is ringing (like Instagram).
+    // Plays from the moment we start calling, not only after the other phone confirms delivery.
+    val ringing = isCaller && call.status == "RINGING" && remoteUid == 0 && permsGranted
     DisposableEffect(ringing) {
-        var tone: android.media.ToneGenerator? = null
-        if (ringing) {
-            try {
-                tone = android.media.ToneGenerator(android.media.AudioManager.STREAM_VOICE_CALL, 80)
-                tone.startTone(android.media.ToneGenerator.TONE_SUP_RINGTONE)
-            } catch (e: Exception) { }
-        }
-        onDispose { try { tone?.stopTone(); tone?.release() } catch (e: Exception) { } }
+        val ringback = com.example.util.CallTones.Ringback()
+        if (ringing) ringback.start()
+        onDispose { ringback.stop() }
     }
 
     LaunchedEffect(remoteLeft) { if (remoteLeft) onEnd() }
@@ -288,18 +283,9 @@ fun IncomingCallScreen(
     val ctx = LocalContext.current
     BackHandler(enabled = true) { onDecline() }
     DisposableEffect(Unit) {
-        val ringtone = try {
-            RingtoneManager.getRingtone(ctx, RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE))
-                ?.also { r ->
-                    if (android.os.Build.VERSION.SDK_INT >= 28) r.isLooping = true
-                    r.audioAttributes = android.media.AudioAttributes.Builder()
-                        .setUsage(android.media.AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
-                        .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                        .build()
-                    r.play()
-                }
-        } catch (e: Exception) { null }
-        onDispose { try { ringtone?.stop() } catch (e: Exception) { } }
+        val ring = com.example.util.CallTones.IncomingRing(ctx.applicationContext)
+        ring.start()
+        onDispose { ring.stop() }
     }
     val name = peer?.let { it.fullName.ifBlank { it.username } } ?: "Someone"
     Box(modifier = Modifier.fillMaxSize().background(CallBg).pointerInput(Unit) { detectTapGestures { } }) {

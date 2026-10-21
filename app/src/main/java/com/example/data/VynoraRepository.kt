@@ -797,6 +797,17 @@ class VynoraRepository(
         val cleanUsername = updatedUser.username.lowercase().trim()
         val cleanPhone = updatedUser.phone.filter { it.isDigit() || it == '+' }
 
+        // 0. Full name can be changed only once every 14 days
+        val isNameChanged = oldUser != null && oldUser.fullName.trim() != updatedUser.fullName.trim()
+        if (isNameChanged) {
+            val dayMs = 24L * 60L * 60L * 1000L
+            val elapsedName = System.currentTimeMillis() - oldUser!!.nameLastChangedAt
+            if (oldUser.nameLastChangedAt > 0L && elapsedName < 14L * dayMs) {
+                val daysLeft = ((14L * dayMs - elapsedName) / dayMs).toInt() + 1
+                return Result.failure(IllegalStateException("Name can only be changed once every 14 days. $daysLeft days remaining."))
+            }
+        }
+
         // 1. If username changed, verify 14-day limit and uniqueness
         val isUsernameChanged = oldUser != null && oldUser.username.isNotBlank() && oldUser.username.lowercase().trim() != cleanUsername
         if (isUsernameChanged) {
@@ -842,7 +853,8 @@ class VynoraRepository(
             username = cleanUsername,
             phone = cleanPhone,
             avatarUrl = avatarSource,
-            usernameLastChangedAt = if (isUsernameChanged) System.currentTimeMillis() else updatedUser.usernameLastChangedAt
+            usernameLastChangedAt = if (isUsernameChanged) System.currentTimeMillis() else updatedUser.usernameLastChangedAt,
+            nameLastChangedAt = if (isNameChanged) System.currentTimeMillis() else (oldUser?.nameLastChangedAt ?: updatedUser.nameLastChangedAt)
         )
 
         return try {
@@ -1017,6 +1029,40 @@ class VynoraRepository(
         } catch (e: Exception) {
             Log.w("VynoraRepo", "setClipComments failed", e)
         }
+    }
+
+    /** Records that [viewer] watched a story. One doc per viewer, so repeats never double count. */
+    suspend fun recordMomentView(momentId: String, viewer: User) {
+        try {
+            db.collection("moments").document(momentId)
+                .collection("viewers").document(viewer.id)
+                .set(
+                    mapOf(
+                        "userId" to viewer.id,
+                        "username" to viewer.username,
+                        "viewedAt" to System.currentTimeMillis()
+                    )
+                ).await()
+        } catch (e: Exception) {
+            Log.w("VynoraRepo", "recordMomentView failed", e)
+        }
+    }
+
+    /** Live list of people who viewed a story (newest first), with their full profiles. */
+    fun observeMomentViewers(momentId: String): Flow<List<User>> = callbackFlow {
+        val listener = db.collection("moments").document(momentId)
+            .collection("viewers")
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    Log.w("VynoraRepo", "viewers listener error", error)
+                    return@addSnapshotListener
+                }
+                val ids = (snapshot?.documents ?: emptyList())
+                    .sortedByDescending { it.getLong("viewedAt") ?: 0L }
+                    .map { it.id }
+                launch { trySend(ids.map { loadUserCached(it) }) }
+            }
+        awaitClose { listener.remove() }
     }
 
     suspend fun saveMoment(moment: Moment) {
