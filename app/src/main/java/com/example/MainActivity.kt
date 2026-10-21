@@ -67,6 +67,16 @@ open class MainActivity : ComponentActivity() {
         showLastCrashIfAny()
     }
 
+    override fun onStart() {
+        super.onStart()
+        com.example.viewmodel.AppForeground.inForeground = true
+    }
+
+    override fun onStop() {
+        com.example.viewmodel.AppForeground.inForeground = false
+        super.onStop()
+    }
+
     // --- Crash catcher: saves the real error so it can be shown on next launch ---
     private fun installCrashCatcher() {
         val previous = Thread.getDefaultUncaughtExceptionHandler()
@@ -120,6 +130,22 @@ fun VynoraApp(viewModel: VynoraViewModel) {
                     hostContext, android.Manifest.permission.RECORD_AUDIO
                 ) == android.content.pm.PackageManager.PERMISSION_GRANTED
                 if (!granted) micPermissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
+            }
+        }
+    }
+    // Notifications (Android 13+): needed to show "incoming call" when the app is in the background.
+    val notifPermissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+    ) { _ -> }
+    LaunchedEffect(uiState.isLoggedIn) {
+        if (uiState.isLoggedIn && android.os.Build.VERSION.SDK_INT >= 33) {
+            val prefs = hostContext.getSharedPreferences("vynora_prefs", android.content.Context.MODE_PRIVATE)
+            if (!prefs.getBoolean("asked_notif_permission", false)) {
+                prefs.edit().putBoolean("asked_notif_permission", true).apply()
+                val granted = androidx.core.content.ContextCompat.checkSelfPermission(
+                    hostContext, android.Manifest.permission.POST_NOTIFICATIONS
+                ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                if (!granted) notifPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
             }
         }
     }
@@ -209,11 +235,11 @@ fun VynoraApp(viewModel: VynoraViewModel) {
                                 }
                                 MainTab.EXPLORE -> {
                                     ExploreScreen(
-                                        posts = uiState.posts,
+                                        posts = uiState.posts.filter { it.author.id != uiState.currentUser?.id },
                                         isDarkMode = uiState.isDarkMode,
                                         onUserClick = { username -> viewModel.openUserProfileByUsername(username) },
                                         onFollowToggle = { username -> viewModel.toggleFollowCreator(username) },
-                                        onPostClick = { post -> viewModel.openComments(post.id) }
+                                        onPostClick = { post -> viewModel.openPostViewer(post.id) }
                                     )
                                 }
                                 MainTab.CREATE -> {
@@ -256,6 +282,7 @@ fun VynoraApp(viewModel: VynoraViewModel) {
                                         onUserClick = { uid -> viewModel.openUserProfile(uid) },
                                         onShareClick = { clip -> shareClip = clip },
                                         onToast = { msg -> viewModel.showToast(msg) },
+                                        onReport = { id, uname -> viewModel.openReportDialog("Clip", id, uname) },
                                         onCreateClick = { viewModel.selectTab(MainTab.CREATE) }
                                     )
                                 }
@@ -580,6 +607,7 @@ fun VynoraApp(viewModel: VynoraViewModel) {
                     onShareClick = { clip -> shareClip = clip },
                     onToast = { msg -> viewModel.showToast(msg) },
                     onBack = { viewModel.navigateBack() },
+                    onReport = { id, uname -> viewModel.openReportDialog("Clip", id, uname) },
                     initialIndex = startAt
                 )
             }
