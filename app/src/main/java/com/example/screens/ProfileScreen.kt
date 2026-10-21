@@ -67,6 +67,9 @@ fun ProfileScreen(
     onSwitchAccount: (accountId: String, identifier: String) -> Unit = { _, _ -> },
     onOpenFollowList: (tab: Int) -> Unit = {},
     onAddAccount: () -> Unit = {},
+    switchPasswordFor: com.example.model.SavedAccount? = null,
+    onSubmitSwitchPassword: (String) -> Unit = {},
+    onDismissSwitchPassword: () -> Unit = {},
     isOwnProfile: Boolean = true,
     isFollowing: Boolean = false,
     onFollowClick: () -> Unit = {},
@@ -777,6 +780,39 @@ fun ProfileScreen(
                 }
             }
         }
+    }
+
+    // --- Password prompt for switching to an account that has no saved login yet ---
+    switchPasswordFor?.let { acc ->
+        var pw by remember(acc.id) { mutableStateOf("") }
+        var show by remember(acc.id) { mutableStateOf(false) }
+        AlertDialog(
+            onDismissRequest = onDismissSwitchPassword,
+            shape = RoundedCornerShape(20.dp),
+            containerColor = cardBg,
+            title = { Text("Switch to @${acc.username}", fontWeight = FontWeight.Bold, color = if (isDarkMode) Color.White else Color(0xFF0F172A)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Enter the password once. Next time this account switches with one tap.", fontSize = 12.sp, color = Color(0xFF94A3B8))
+                    OutlinedTextField(
+                        value = pw,
+                        onValueChange = { pw = it },
+                        singleLine = true,
+                        label = { Text("Password") },
+                        visualTransformation = if (show) androidx.compose.ui.text.input.VisualTransformation.None
+                            else androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                        trailingIcon = { TextButton(onClick = { show = !show }) { Text(if (show) "Hide" else "Show", color = VynoraNeonCyan) } },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(enabled = pw.length >= 6, onClick = { onSubmitSwitchPassword(pw) }) {
+                    Text("Switch", color = VynoraNeonCyan, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = { TextButton(onClick = onDismissSwitchPassword) { Text("Cancel", color = Color(0xFF94A3B8)) } }
+        )
     }
 
     // --- Account switcher ---

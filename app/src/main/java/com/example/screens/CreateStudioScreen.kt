@@ -166,6 +166,8 @@ fun CreateStudioScreen(
     var commentsOff by remember { mutableStateOf(false) }
     var showLocationDialog by remember { mutableStateOf(false) }
     var showAudienceDialog by remember { mutableStateOf(false) }
+    var selectedSong by remember { mutableStateOf<com.example.util.MusicTrack?>(null) }
+    var showMusicPicker by remember { mutableStateOf(false) }
 
     var picked by remember { mutableStateOf<GalleryItem?>(null) }
     var pickedSizeMb by remember { mutableStateOf(0f) }
@@ -237,6 +239,14 @@ fun CreateStudioScreen(
     }
 
     val title = when (mode) { CreateMode.CLIP -> "New reel"; CreateMode.MOMENT -> "New story"; else -> "New post" }
+
+    if (showMusicPicker) {
+        MusicPickerSheet(
+            isDarkMode = isDarkMode,
+            onPick = { selectedSong = it; showMusicPicker = false },
+            onDismiss = { showMusicPicker = false }
+        )
+    }
 
     Box(modifier = modifier.fillMaxSize().background(screenBg).windowInsetsPadding(WindowInsets.statusBars)) {
         when (step) {
@@ -425,6 +435,18 @@ fun CreateStudioScreen(
                     ) { showAudienceDialog = true }
                     if (mode == CreateMode.MOMENT) {
                         HorizontalDivider(color = if (isDarkMode) Color(0x22FFFFFF) else Color(0x1F000000))
+                        SettingRow(
+                            Icons.Outlined.MusicNote,
+                            selectedSong?.label ?: "Add music",
+                            if (selectedSong != null) "Change" else null,
+                            fg, sub
+                        ) { showMusicPicker = true }
+                        if (selectedSong != null) {
+                            TextButton(onClick = { selectedSong = null }) {
+                                Text("Remove music", color = VynoraNeonPink, fontSize = 12.sp)
+                            }
+                        }
+                        HorizontalDivider(color = if (isDarkMode) Color(0x22FFFFFF) else Color(0x1F000000))
                         Row(
                             modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically
@@ -475,8 +497,11 @@ fun CreateStudioScreen(
                         }
                         onStartBackgroundUpload(
                             kindName, p.uri, finalCaption, finalTags, location.ifBlank { null },
-                            selectedFilter, visibility, "Original audio", isCloseFriends, flags
+                            selectedFilter, visibility,
+                            if (mode == CreateMode.MOMENT) (selectedSong?.pack() ?: "Original audio") else "Original audio",
+                            isCloseFriends, flags
                         )
+                        selectedSong = null
                         picked = null; pickedSizeMb = 0f; caption = ""; location = ""; selectedFilter = "Original"
                         hideLikes = false; hideShares = false; commentsOff = false; confirmSafeContent = false
                         step = 0
@@ -606,5 +631,126 @@ private fun ToggleRow(
         Spacer(modifier = Modifier.width(14.dp))
         Text(label, color = fg, fontSize = 15.sp, modifier = Modifier.weight(1f))
         Switch(checked = checked, onCheckedChange = onChange)
+    }
+}
+
+
+/** Search online songs, tap to preview, tap "Use" to attach to the story. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun MusicPickerSheet(
+    isDarkMode: Boolean,
+    onPick: (com.example.util.MusicTrack) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val fg = if (isDarkMode) Color.White else Color(0xFF0F172A)
+    val sub = if (isDarkMode) Color(0xFF94A3B8) else Color(0xFF64748B)
+    var query by remember { mutableStateOf("") }
+    var loading by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var results by remember { mutableStateOf<List<com.example.util.MusicTrack>>(emptyList()) }
+    var playingUrl by remember { mutableStateOf<String?>(null) }
+    val player = remember { arrayOfNulls<android.media.MediaPlayer>(1) }
+
+    fun stopPlayer() {
+        try { player[0]?.stop() } catch (e: Exception) { }
+        try { player[0]?.release() } catch (e: Exception) { }
+        player[0] = null
+        playingUrl = null
+    }
+    DisposableEffect(Unit) { onDispose { stopPlayer() } }
+
+    fun togglePreview(t: com.example.util.MusicTrack) {
+        if (playingUrl == t.previewUrl) { stopPlayer(); return }
+        stopPlayer()
+        try {
+            val mp = android.media.MediaPlayer()
+            mp.setAudioAttributes(
+                android.media.AudioAttributes.Builder()
+                    .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
+                    .setContentType(android.media.AudioAttributes.CONTENT_TYPE_MUSIC)
+                    .build()
+            )
+            mp.setDataSource(t.previewUrl)
+            mp.setOnPreparedListener { it.start() }
+            mp.setOnCompletionListener { stopPlayer() }
+            mp.setOnErrorListener { _, _, _ -> stopPlayer(); true }
+            mp.prepareAsync()
+            player[0] = mp
+            playingUrl = t.previewUrl
+        } catch (e: Exception) { stopPlayer() }
+    }
+
+    var searchTrigger by remember { mutableStateOf(0) }
+    LaunchedEffect(searchTrigger) {
+        if (query.isBlank()) return@LaunchedEffect
+        loading = true; error = null
+        val r = com.example.util.MusicSearch.search(query)
+        loading = false
+        r.onSuccess { results = it; if (it.isEmpty()) error = "No songs found" }
+            .onFailure { error = "Could not search songs. Check your internet." }
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = { stopPlayer(); onDismiss() },
+        containerColor = if (isDarkMode) Color(0xFF0F121E) else Color.White
+    ) {
+        Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 24.dp)) {
+            Text("Add music", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = fg)
+            Spacer(modifier = Modifier.height(10.dp))
+            OutlinedTextField(
+                value = query,
+                onValueChange = { query = it },
+                singleLine = true,
+                placeholder = { Text("Search songs or artists") },
+                leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null) },
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Search),
+                keyboardActions = androidx.compose.foundation.text.KeyboardActions(onSearch = { searchTrigger++ }),
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(14.dp)
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            when {
+                loading -> Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = VynoraNeonCyan, strokeWidth = 2.dp)
+                }
+                error != null -> Text(error ?: "", color = sub, fontSize = 13.sp, modifier = Modifier.padding(12.dp))
+                results.isEmpty() -> Text("Type a song name and press search", color = sub, fontSize = 13.sp, modifier = Modifier.padding(12.dp))
+            }
+            androidx.compose.foundation.lazy.LazyColumn(modifier = Modifier.heightIn(max = 420.dp)) {
+                items(results.size) { i ->
+                    val t = results[i]
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier.size(46.dp).clip(RoundedCornerShape(8.dp)).clickable { togglePreview(t) },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            coil.compose.AsyncImage(
+                                model = t.artworkUrl, contentDescription = null,
+                                contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize()
+                            )
+                            Box(Modifier.fillMaxSize().background(Color(0x66000000)))
+                            Icon(
+                                if (playingUrl == t.previewUrl) Icons.Outlined.Pause else Icons.Outlined.PlayArrow,
+                                contentDescription = "Preview", tint = Color.White
+                            )
+                        }
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(t.title, color = fg, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, maxLines = 1)
+                            Text(t.artist, color = sub, fontSize = 12.sp, maxLines = 1)
+                        }
+                        Button(
+                            onClick = { stopPlayer(); onPick(t) },
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = VynoraNeonPink)
+                        ) { Text("Use", color = Color.White, fontSize = 13.sp) }
+                    }
+                }
+            }
+        }
     }
 }

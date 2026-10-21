@@ -7,6 +7,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -34,6 +35,7 @@ import com.example.ui.theme.VynoraNeonEmerald
 import com.example.ui.theme.VynoraNeonPink
 import kotlinx.coroutines.delay
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MomentsViewerScreen(
     moments: List<Moment>,
@@ -42,6 +44,9 @@ fun MomentsViewerScreen(
     onClose: () -> Unit,
     onSendReply: (momentId: String, text: String) -> Unit,
     onToast: (String) -> Unit,
+    viewers: List<User> = emptyList(),
+    onMomentShown: (Moment) -> Unit = {},
+    onOpenProfile: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     if (moments.isEmpty()) {
@@ -58,10 +63,52 @@ fun MomentsViewerScreen(
 
     val progressAnim = remember { Animatable(0f) }
 
+    // Story music: play the attached song while this story is on screen
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var songPlayer by remember { mutableStateOf<android.media.MediaPlayer?>(null) }
+    DisposableEffect(currentMoment.id) {
+        var mp: android.media.MediaPlayer? = null
+        val url = currentMoment.musicUrl
+        if (url.isNotBlank()) {
+            try {
+                mp = android.media.MediaPlayer().apply {
+                    setAudioAttributes(
+                        android.media.AudioAttributes.Builder()
+                            .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
+                            .setContentType(android.media.AudioAttributes.CONTENT_TYPE_MUSIC)
+                            .build()
+                    )
+                    setDataSource(url)
+                    isLooping = true
+                    setOnPreparedListener { it.start() }
+                    setOnErrorListener { _, _, _ -> true }
+                    prepareAsync()
+                }
+            } catch (e: Exception) { mp = null }
+        }
+        songPlayer = mp
+        onDispose {
+            try { mp?.stop() } catch (e: Exception) { }
+            try { mp?.release() } catch (e: Exception) { }
+            if (songPlayer === mp) songPlayer = null
+        }
+    }
+    // pause the song when the story is paused (long press) or the viewers list is open
+    LaunchedEffect(isPaused, showViewersSheet, songPlayer) {
+        val mp = songPlayer ?: return@LaunchedEffect
+        try {
+            if (isPaused || showViewersSheet) { if (mp.isPlaying) mp.pause() }
+            else if (!mp.isPlaying) mp.start()
+        } catch (e: Exception) { }
+    }
+
+    // Save my view (others' stories) or start loading viewers (my own story)
+    LaunchedEffect(currentMoment.id) { onMomentShown(currentMoment) }
+
     // Auto-advance progress
-    LaunchedEffect(currentIndex, isPaused) {
+    LaunchedEffect(currentIndex, isPaused, showViewersSheet) {
         progressAnim.snapTo(0f)
-        if (!isPaused) {
+        if (!isPaused && !showViewersSheet) {
             progressAnim.animateTo(
                 targetValue = 1f,
                 animationSpec = tween(durationMillis = 4500, easing = LinearEasing)
@@ -175,6 +222,7 @@ fun MomentsViewerScreen(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Row(
+                    modifier = Modifier.clickable { onOpenProfile(currentMoment.author.id) },
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
@@ -323,7 +371,7 @@ fun MomentsViewerScreen(
                         modifier = Modifier.size(16.dp)
                     )
                     Text(
-                        text = "${formatCount(currentMoment.viewersCount)} viewers",
+                        text = "${formatCount(maxOf(viewers.size, currentMoment.viewersCount))} viewers",
                         fontSize = 12.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = Color.White
@@ -382,6 +430,60 @@ fun MomentsViewerScreen(
                         tint = if (isLiked) VynoraNeonPink else Color.White,
                         modifier = Modifier.size(24.dp)
                     )
+                }
+            }
+        }
+    }
+
+    // --- Viewers list (tap a viewer to open their profile) ---
+    if (showViewersSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showViewersSheet = false },
+            containerColor = Color(0xFF0F121E)
+        ) {
+            Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 24.dp)) {
+                Text(
+                    text = "${viewers.size} viewers",
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+                if (viewers.isEmpty()) {
+                    Text("No views yet", color = Color.White.copy(alpha = 0.6f), fontSize = 13.sp)
+                }
+                androidx.compose.foundation.lazy.LazyColumn(
+                    modifier = Modifier.heightIn(max = 420.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    items(viewers.size) { i ->
+                        val v = viewers[i]
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .clickable {
+                                    showViewersSheet = false
+                                    onOpenProfile(v.id)
+                                }
+                                .padding(8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            AsyncImage(
+                                model = v.avatarUrl,
+                                contentDescription = v.username,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.size(42.dp).clip(CircleShape)
+                            )
+                            Column {
+                                Text("@${v.username}", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                if (v.fullName.isNotBlank()) {
+                                    Text(v.fullName, color = Color.White.copy(alpha = 0.6f), fontSize = 12.sp)
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }

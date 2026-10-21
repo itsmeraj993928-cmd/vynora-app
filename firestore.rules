@@ -42,7 +42,18 @@ service cloud.firestore {
           request.resource.data.referralCount == resource.data.referralCount &&
           request.resource.data.role == resource.data.role &&
           request.resource.data.isOfficial == resource.data.isOfficial &&
-          request.resource.data.isBanned == resource.data.isBanned)
+          request.resource.data.isBanned == resource.data.isBanned &&
+          // Full name can only be changed once every 14 days (enforced on the server too)
+          (
+            (request.resource.data.fullName == resource.data.fullName &&
+             request.resource.data.get('nameLastChangedAt', 0) == resource.data.get('nameLastChangedAt', 0))
+            ||
+            (request.resource.data.fullName != resource.data.fullName &&
+             request.time.toMillis() - resource.data.get('nameLastChangedAt', 0) >= 1209600000 &&
+             request.resource.data.get('nameLastChangedAt', 0) >= request.time.toMillis() - 600000 &&
+             request.resource.data.get('nameLastChangedAt', 0) <= request.time.toMillis() + 600000)
+          )
+        )
       );
 
       allow delete: if isAdmin();
@@ -97,6 +108,13 @@ service cloud.firestore {
       allow read: if isAuthenticated();
       allow create: if isAuthenticated() && request.resource.data.authorId == request.auth.uid;
       allow update, delete: if isAuthenticated() && (resource.data.authorId == request.auth.uid || isAdmin());
+
+      // Story viewers: anyone signed in may record their OWN view; everyone signed in can read the list
+      match /viewers/{viewerId} {
+        allow read: if isAuthenticated();
+        allow create, update: if isAuthenticated() && viewerId == request.auth.uid;
+        allow delete: if isAdmin();
+      }
     }
 
     // Chats

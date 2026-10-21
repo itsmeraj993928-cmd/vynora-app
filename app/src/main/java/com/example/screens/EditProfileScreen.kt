@@ -109,6 +109,13 @@ fun EditProfileScreen(
         ((fourteenDaysMillis - timeSinceUsernameChange) / (24L * 60L * 60L * 1000L)).toInt() + 1
     } else 0
 
+    // 14-day full name cooldown check
+    val timeSinceNameChange = System.currentTimeMillis() - user.nameLastChangedAt
+    val isNameOnCooldown = user.nameLastChangedAt > 0L && timeSinceNameChange < fourteenDaysMillis
+    val daysRemainingForName = if (isNameOnCooldown) {
+        ((fourteenDaysMillis - timeSinceNameChange) / (24L * 60L * 60L * 1000L)).toInt() + 1
+    } else 0
+
     // Unsaved changes detector
     val hasUnsavedChanges by remember {
         derivedStateOf {
@@ -264,6 +271,10 @@ fun EditProfileScreen(
                             }
                             if (username.isBlank()) {
                                 errorMessage = "Username cannot be blank"
+                                return@TextButton
+                            }
+                            if (fullName.trim() != user.fullName.trim() && isNameOnCooldown) {
+                                errorMessage = VynoraStrings.nameCooldownWarning(daysRemainingForName, currentLanguage)
                                 return@TextButton
                             }
                             if (username != user.username && isUsernameOnCooldown) {
@@ -522,10 +533,12 @@ fun EditProfileScreen(
                         .padding(18.dp),
                     verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
-                    // Display Name
+                    // Display Name (14-day cooldown)
+                    Column(modifier = Modifier.fillMaxWidth()) {
                     OutlinedTextField(
                         value = fullName,
-                        onValueChange = { fullName = it; errorMessage = null },
+                        onValueChange = { if (!isNameOnCooldown) { fullName = it; errorMessage = null } },
+                        readOnly = isNameOnCooldown,
                         label = { Text(VynoraStrings.fullNameLabel(currentLanguage)) },
                         leadingIcon = { Icon(Icons.Outlined.Person, contentDescription = null, tint = VynoraNeonPink) },
                         singleLine = true,
@@ -537,6 +550,22 @@ fun EditProfileScreen(
                             unfocusedContainerColor = fieldBg
                         )
                     )
+                    if (isNameOnCooldown) {
+                        Text(
+                            text = VynoraStrings.nameCooldownWarning(daysRemainingForName, currentLanguage),
+                            color = Color(0xFFFBBF24),
+                            fontSize = 11.sp,
+                            modifier = Modifier.padding(top = 4.dp, start = 4.dp)
+                        )
+                    } else {
+                        Text(
+                            text = "Can be changed once every 14 days",
+                            color = textSecondary,
+                            fontSize = 10.5.sp,
+                            modifier = Modifier.padding(top = 3.dp, start = 4.dp)
+                        )
+                    }
+                    }
 
                     // Username (@handle) with 14-day check
                     Column(modifier = Modifier.fillMaxWidth()) {
@@ -1014,6 +1043,10 @@ fun EditProfileScreen(
                     }
                     if (username.isBlank()) {
                         errorMessage = "Username cannot be blank"
+                        return@Button
+                    }
+                    if (fullName.trim() != user.fullName.trim() && isNameOnCooldown) {
+                        errorMessage = VynoraStrings.nameCooldownWarning(daysRemainingForName, currentLanguage)
                         return@Button
                     }
                     if (username != user.username && isUsernameOnCooldown) {
