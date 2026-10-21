@@ -51,7 +51,9 @@ fun PostCard(
     onShareClick: () -> Unit,
     onReportClick: () -> Unit,
     onAuthorClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    isOwner: Boolean = false,
+    onDeleteClick: () -> Unit = {}
 ) {
     var showBigHeart by remember { mutableStateOf(false) }
     var menuExpanded by remember { mutableStateOf(false) }
@@ -134,14 +136,25 @@ fun PostCard(
                     onDismissRequest = { menuExpanded = false },
                     modifier = Modifier.background(if (isDarkMode) Color(0xFF1E2235) else Color.White)
                 ) {
-                    DropdownMenuItem(
-                        text = { Text("Report Post", color = Color(0xFFEF4444)) },
-                        leadingIcon = { Icon(Icons.Outlined.Flag, contentDescription = null, tint = Color(0xFFEF4444)) },
-                        onClick = {
-                            menuExpanded = false
-                            onReportClick()
-                        }
-                    )
+                    if (isOwner) {
+                        DropdownMenuItem(
+                            text = { Text("Delete Post", color = Color(0xFFEF4444), fontWeight = FontWeight.SemiBold) },
+                            leadingIcon = { Icon(Icons.Outlined.Delete, contentDescription = null, tint = Color(0xFFEF4444)) },
+                            onClick = {
+                                menuExpanded = false
+                                onDeleteClick()
+                            }
+                        )
+                    } else {
+                        DropdownMenuItem(
+                            text = { Text("Report Post", color = Color(0xFFEF4444)) },
+                            leadingIcon = { Icon(Icons.Outlined.Flag, contentDescription = null, tint = Color(0xFFEF4444)) },
+                            onClick = {
+                                menuExpanded = false
+                                onReportClick()
+                            }
+                        )
+                    }
                     DropdownMenuItem(
                         text = { Text("Share Link") },
                         leadingIcon = { Icon(Icons.Outlined.Share, contentDescription = null) },
