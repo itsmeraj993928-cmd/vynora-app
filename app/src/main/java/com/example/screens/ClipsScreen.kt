@@ -56,7 +56,8 @@ fun ClipsScreen(
     onUserClick: (String) -> Unit = {},
     onBack: (() -> Unit)? = null,
     initialIndex: Int = 0,
-    onCreateClick: (() -> Unit)? = null
+    onCreateClick: (() -> Unit)? = null,
+    onReport: (clipId: String, username: String) -> Unit = { _, _ -> }
 ) {
     val pagerState = rememberPagerState(initialPage = initialIndex.coerceIn(0, maxOf(0, clips.size - 1)), pageCount = { clips.size })
     var isMuted by remember { mutableStateOf(false) }
@@ -116,7 +117,8 @@ fun ClipsScreen(
                     isOwner = currentUserId.isNotBlank() && clip.author.id == currentUserId,
                     onDelete = { onDeleteClip(clip.id) },
                     onUserClick = { onUserClick(clip.author.id) },
-                    onToast = onToast
+                    onToast = onToast,
+                    onReport = { onReport(clip.id, clip.author.username) }
                 )
             }
         }
@@ -193,7 +195,8 @@ private fun ClipItemView(
     isOwner: Boolean,
     onDelete: () -> Unit,
     onUserClick: () -> Unit = {},
-    onToast: (String) -> Unit = {}
+    onToast: (String) -> Unit = {},
+    onReport: () -> Unit = {}
 ) {
     var captionExpanded by remember { mutableStateOf(false) }
     var isPlaying by remember { mutableStateOf(true) }
@@ -389,14 +392,30 @@ private fun ClipItemView(
                 onClick = onShareClick
             )
 
-            // Delete (only for the creator of this clip)
-            if (isOwner) {
-                ActionIconWithCount(
-                    icon = Icons.Outlined.Delete,
-                    count = "Delete",
-                    tint = Color(0xFFEF4444),
-                    onClick = { showDeleteConfirm = true }
+            // More options (three dots): Delete for the creator, Report for everyone else
+            var menuOpen by remember { mutableStateOf(false) }
+            Box {
+                Icon(
+                    imageVector = Icons.Filled.MoreVert,
+                    contentDescription = "More",
+                    tint = Color.White,
+                    modifier = Modifier.size(28.dp).clickable { menuOpen = true }
                 )
+                DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                    if (isOwner) {
+                        DropdownMenuItem(
+                            text = { Text("Delete", color = Color(0xFFEF4444), fontWeight = FontWeight.SemiBold) },
+                            leadingIcon = { Icon(Icons.Outlined.Delete, contentDescription = null, tint = Color(0xFFEF4444)) },
+                            onClick = { menuOpen = false; showDeleteConfirm = true }
+                        )
+                    } else {
+                        DropdownMenuItem(
+                            text = { Text("Report") },
+                            leadingIcon = { Icon(Icons.Outlined.Flag, contentDescription = null) },
+                            onClick = { menuOpen = false; onReport() }
+                        )
+                    }
+                }
             }
 
             // Rotating Vinyl Disc

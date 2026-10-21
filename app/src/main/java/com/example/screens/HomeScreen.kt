@@ -66,6 +66,31 @@ fun HomeScreen(
     onFollowAuthor: (id: String, username: String) -> Unit = { _, _ -> }
 ) {
     var postToDelete by remember { mutableStateOf<String?>(null) }
+    var postMenuFor by remember { mutableStateOf<String?>(null) }
+    if (postMenuFor != null) {
+        AlertDialog(
+            onDismissRequest = { postMenuFor = null },
+            title = { Text("Post options") },
+            text = {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .clickable {
+                            postToDelete = postMenuFor
+                            postMenuFor = null
+                        }
+                        .padding(vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Outlined.Delete, contentDescription = null, tint = Color(0xFFEF4444))
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text("Delete post", color = Color(0xFFEF4444), fontWeight = FontWeight.SemiBold)
+                }
+            },
+            confirmButton = { TextButton(onClick = { postMenuFor = null }) { Text("Close") } }
+        )
+    }
     if (postToDelete != null) {
         AlertDialog(
             onDismissRequest = { postToDelete = null },
@@ -231,7 +256,10 @@ fun HomeScreen(
                             onSaveToggle = { onSaveToggle(post.id) },
                             onCommentsClick = { onCommentsClick(post.id) },
                             onShareClick = { onShareClick(post) },
-                            onReportClick = { onReportClick("Post", post.id, post.author.username) },
+                            onReportClick = {
+                                if (currentUser.id.isNotBlank() && post.author.id == currentUser.id) postMenuFor = post.id
+                                else onReportClick("Post", post.id, post.author.username)
+                            },
                             onAuthorClick = { onAuthorClick(post.author.username) },
                             modifier = Modifier.padding(horizontal = 14.dp)
                         )
@@ -256,23 +284,6 @@ fun HomeScreen(
                                 )
                             }
                         }
-                        }
-                        if (currentUser.id.isNotBlank() && post.author.id == currentUser.id) {
-                            TextButton(
-                                onClick = { postToDelete = post.id },
-                                modifier = Modifier
-                                    .align(Alignment.End)
-                                    .padding(horizontal = 14.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Outlined.Delete,
-                                    contentDescription = null,
-                                    tint = Color(0xFFEF4444),
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Delete my post", color = Color(0xFFEF4444), fontSize = 12.sp)
-                            }
                         }
                     }
                 }
@@ -389,10 +400,13 @@ private fun MomentsBar(
     ) {
         // 1. My Moment Item
         item {
+            val myIndex = moments.indexOfFirst { it.author.id.isNotBlank() && it.author.id == currentUser.id }
+            val hasMine = myIndex >= 0
+            val openMine: () -> Unit = { if (hasMine) onOpenMoment(myIndex) else onCreateMoment() }
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier
-                    .clickable(onClick = onCreateMoment)
+                    .clickable(onClick = openMine)
                     .testTag("add_moment_button")
             ) {
                 Box(
@@ -410,8 +424,9 @@ private fun MomentsBar(
                         if (currentUser.avatarUrl.isNotBlank()) {
                             StoryRingAvatar(
                                 avatarUrl = currentUser.avatarUrl,
+                                hasStory = hasMine,
                                 size = 62.dp,
-                                onClick = onCreateMoment
+                                onClick = openMine
                             )
                         } else {
                             Icon(
@@ -431,7 +446,8 @@ private fun MomentsBar(
                             .clip(CircleShape)
                             .background(
                                 Brush.linearGradient(listOf(VynoraNeonPink, VynoraNeonCyan))
-                            ),
+                            )
+                            .clickable(onClick = onCreateMoment),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
@@ -456,6 +472,7 @@ private fun MomentsBar(
 
         // 2. Friends' Moments
         itemsIndexed(moments) { index, moment ->
+            if (moment.author.id.isNotBlank() && moment.author.id == currentUser.id) return@itemsIndexed
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier

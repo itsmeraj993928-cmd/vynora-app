@@ -147,6 +147,19 @@ fun CallScreen(
         }
     }
 
+    // Ringback tone for the caller while the other phone is ringing (like Instagram)
+    val ringing = isCaller && call.status == "RINGING" && remoteUid == 0
+    DisposableEffect(ringing) {
+        var tone: android.media.ToneGenerator? = null
+        if (ringing) {
+            try {
+                tone = android.media.ToneGenerator(android.media.AudioManager.STREAM_VOICE_CALL, 80)
+                tone.startTone(android.media.ToneGenerator.TONE_SUP_RINGTONE)
+            } catch (e: Exception) { }
+        }
+        onDispose { try { tone?.stopTone(); tone?.release() } catch (e: Exception) { } }
+    }
+
     LaunchedEffect(remoteLeft) { if (remoteLeft) onEnd() }
     LaunchedEffect(remoteUid != 0) {
         if (remoteUid != 0) {
@@ -277,7 +290,14 @@ fun IncomingCallScreen(
     DisposableEffect(Unit) {
         val ringtone = try {
             RingtoneManager.getRingtone(ctx, RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE))
-                ?.also { it.play() }
+                ?.also { r ->
+                    if (android.os.Build.VERSION.SDK_INT >= 28) r.isLooping = true
+                    r.audioAttributes = android.media.AudioAttributes.Builder()
+                        .setUsage(android.media.AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
+                        .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                        .build()
+                    r.play()
+                }
         } catch (e: Exception) { null }
         onDispose { try { ringtone?.stop() } catch (e: Exception) { } }
     }

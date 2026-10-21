@@ -27,6 +27,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import com.example.components.StoryRingAvatar
 import com.example.model.Post
 import com.example.model.User
 import com.example.ui.theme.VynoraNeonCyan
@@ -45,7 +46,7 @@ fun ExploreScreen(
     var searchQuery by remember { mutableStateOf("") }
     var selectedCategory by remember { mutableStateOf("All") }
 
-    val categories = listOf("All", "Creators", "#Trends", "Nightlife", "Aesthetic", "Music")
+    val categories = listOf("All", "Accounts", "#Trends", "Nightlife", "Aesthetic", "Music")
     val trendingTags = listOf("#VynoraVibes", "#CyberBeats", "#NeonAesthetic", "#TokyoRain", "#3DDesign", "#CreatorFund")
 
     val screenBg = if (isDarkMode) Color(0xFF050509) else Color(0xFFF8FAFC)
@@ -69,7 +70,7 @@ fun ExploreScreen(
             OutlinedTextField(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
-                placeholder = { Text("Search creators, tags, places...", fontSize = 13.sp) },
+                placeholder = { Text("Search accounts, tags, places...", fontSize = 13.sp) },
                 leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = "Search", tint = VynoraNeonCyan) },
                 trailingIcon = {
                     if (searchQuery.isNotEmpty()) {
@@ -122,17 +123,19 @@ fun ExploreScreen(
         Spacer(modifier = Modifier.height(12.dp))
 
         // --- 3. Suggested Creators Row ---
-        val suggestedCreators = remember(posts) {
+        val suggestedCreators = remember(posts, searchQuery) {
+            val q = searchQuery.trim().removePrefix("@")
             posts.map { it.author }
                 .filter { it.username.isNotBlank() }
+                .filter { if (q.isBlank() || q.startsWith("#")) !it.isFollowing else it.username.contains(q, ignoreCase = true) || it.fullName.contains(q, ignoreCase = true) }
                 .distinctBy { it.id.ifEmpty { it.username } }
                 .take(10)
         }
 
-        if ((selectedCategory == "All" || selectedCategory == "Creators") && suggestedCreators.isNotEmpty()) {
+        if ((selectedCategory == "All" || selectedCategory == "Accounts") && suggestedCreators.isNotEmpty()) {
             Column(modifier = Modifier.padding(horizontal = 16.dp)) {
                 Text(
-                    text = "Suggested Creators",
+                    text = if (searchQuery.isBlank()) "Suggested accounts" else "Accounts",
                     fontWeight = FontWeight.Bold,
                     fontSize = 14.sp,
                     color = if (isDarkMode) Color.White else Color(0xFF0F172A)
@@ -248,7 +251,11 @@ fun ExploreScreen(
                             .clickable { onPostClick(post) }
                     ) {
                         AsyncImage(
-                            model = post.mediaUrls.firstOrNull(),
+                            model = post.mediaUrls.firstOrNull()?.let { u ->
+                                if (post.isVideo || u.contains("/video/upload/")) {
+                                    u.substringBeforeLast('.', u).replace("/video/upload/", "/video/upload/so_0,w_480,h_480,c_fill/") + ".jpg"
+                                } else u
+                            },
                             contentDescription = "Explore Item",
                             modifier = Modifier.fillMaxSize(),
                             contentScale = ContentScale.Crop
@@ -297,10 +304,10 @@ private fun SuggestedUserCard(
                 .size(48.dp)
                 .clip(CircleShape)
         ) {
-            AsyncImage(
-                model = user.avatarUrl,
-                contentDescription = user.username,
-                modifier = Modifier.fillMaxSize()
+            StoryRingAvatar(
+                avatarUrl = user.avatarUrl,
+                size = 48.dp,
+                onClick = onUserClick
             )
         }
 
@@ -315,7 +322,7 @@ private fun SuggestedUserCard(
         )
 
         Text(
-            text = "${formatCount(user.followersCount)} fans",
+            text = "${formatCount(user.followersCount)} followers",
             fontSize = 10.sp,
             color = if (isDarkMode) Color(0xFF94A3B8) else Color(0xFF64748B)
         )
