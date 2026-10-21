@@ -66,31 +66,6 @@ fun HomeScreen(
     onFollowAuthor: (id: String, username: String) -> Unit = { _, _ -> }
 ) {
     var postToDelete by remember { mutableStateOf<String?>(null) }
-    var postMenuFor by remember { mutableStateOf<String?>(null) }
-    if (postMenuFor != null) {
-        AlertDialog(
-            onDismissRequest = { postMenuFor = null },
-            title = { Text("Post options") },
-            text = {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(10.dp))
-                        .clickable {
-                            postToDelete = postMenuFor
-                            postMenuFor = null
-                        }
-                        .padding(vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(Icons.Outlined.Delete, contentDescription = null, tint = Color(0xFFEF4444))
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Text("Delete post", color = Color(0xFFEF4444), fontWeight = FontWeight.SemiBold)
-                }
-            },
-            confirmButton = { TextButton(onClick = { postMenuFor = null }) { Text("Close") } }
-        )
-    }
     if (postToDelete != null) {
         AlertDialog(
             onDismissRequest = { postToDelete = null },
@@ -256,10 +231,9 @@ fun HomeScreen(
                             onSaveToggle = { onSaveToggle(post.id) },
                             onCommentsClick = { onCommentsClick(post.id) },
                             onShareClick = { onShareClick(post) },
-                            onReportClick = {
-                                if (currentUser.id.isNotBlank() && post.author.id == currentUser.id) postMenuFor = post.id
-                                else onReportClick("Post", post.id, post.author.username)
-                            },
+                            onReportClick = { onReportClick("Post", post.id, post.author.username) },
+                            isOwner = currentUser.id.isNotBlank() && post.author.id == currentUser.id,
+                            onDeleteClick = { postToDelete = post.id },
                             onAuthorClick = { onAuthorClick(post.author.username) },
                             modifier = Modifier.padding(horizontal = 14.dp)
                         )
