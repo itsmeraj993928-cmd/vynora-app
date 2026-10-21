@@ -148,7 +148,7 @@ fun CallScreen(
     }
 
     // Ringback tone for the caller while the other phone is ringing (like Instagram)
-    val ringing = isCaller && call.status == "RINGING" && remoteUid == 0
+    val ringing = isCaller && call.status == "RINGING" && call.delivered && remoteUid == 0
     DisposableEffect(ringing) {
         var tone: android.media.ToneGenerator? = null
         if (ringing) {
@@ -171,7 +171,7 @@ fun CallScreen(
     val name = peer?.let { it.fullName.ifBlank { it.username } } ?: "Calling…"
     val status = when {
         remoteUid != 0 -> String.format("%02d:%02d", seconds / 60, seconds % 60)
-        call.status == "RINGING" && isCaller -> "Ringing…"
+        call.status == "RINGING" && isCaller -> if (call.delivered) "Ringing…" else "Calling…"
         else -> "Connecting…"
     }
     val eng = engine

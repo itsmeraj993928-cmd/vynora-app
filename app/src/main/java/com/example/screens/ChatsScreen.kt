@@ -231,7 +231,7 @@ private fun ChatConversationRow(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = if (conversation.lastMessage.isAudio) "🎤 Voice note (${conversation.lastMessage.audioDuration ?: "0:34"})" else if (parseSharedReel(conversation.lastMessage.text) != null) "🎬 Reel" else parseCallInvite(conversation.lastMessage.text)?.let { if (it.first) "🎥 Video call" else "📞 Voice call" } ?: conversation.lastMessage.text,
+                    text = if (conversation.lastMessage.isAudio) "🎤 Voice note (${conversation.lastMessage.audioDuration ?: "0:34"})" else if (parseSharedReel(conversation.lastMessage.text) != null) "🎬 Reel" else parseCallLog(conversation.lastMessage.text)?.let { if (it.video) "🎥 Video call" else "📞 Voice call" } ?: parseCallInvite(conversation.lastMessage.text)?.let { if (it.first) "🎥 Video call" else "📞 Voice call" } ?: conversation.lastMessage.text,
                     fontSize = 13.sp,
                     color = if (conversation.unreadCount > 0) (if (isDarkMode) Color.White else Color.Black) else (if (isDarkMode) Color(0xFF94A3B8) else Color(0xFF64748B)),
                     fontWeight = if (conversation.unreadCount > 0) FontWeight.Bold else FontWeight.Normal,
@@ -473,7 +473,10 @@ fun ChatRoomScreen(
                     ) {
                         val sharedReel = parseSharedReel(msg.text)
                         val callInvite = parseCallInvite(msg.text)
-                        if (callInvite != null) {
+                        val callLog = parseCallLog(msg.text)
+                        if (callLog != null) {
+                            CallLogPill(log = callLog, isMe = isMe, isDarkMode = isDarkMode)
+                        } else if (callInvite != null) {
                             CallInviteCard(
                                 isVideo = callInvite.first,
                                 isMe = isMe,
@@ -830,6 +833,47 @@ private fun ReelPreviewDialog(url: String, onDismiss: () -> Unit) {
 
 
 /** Parses "Started a video call: <url>" / "Started a voice call: <url>" into (isVideo, url). */
+private data class CallLogInfo(val video: Boolean, val status: String, val seconds: Int)
+
+private fun parseCallLog(text: String): CallLogInfo? {
+    if (!text.startsWith("[call]")) return null
+    val parts = text.removePrefix("[call]").split("|")
+    if (parts.size < 3) return null
+    return CallLogInfo(parts[0] == "video", parts[1], parts[2].toIntOrNull() ?: 0)
+}
+
+@Composable
+private fun CallLogPill(log: CallLogInfo, isMe: Boolean, isDarkMode: Boolean) {
+    val kind = if (log.video) "video call" else "voice call"
+    val missedForMe = !isMe && (log.status == "MISSED" || log.status == "CANCELED")
+    val label = when (log.status) {
+        "ENDED" -> "${if (log.video) "Video" else "Voice"} call · " + String.format("%d:%02d", log.seconds / 60, log.seconds % 60)
+        "DECLINED" -> "Call declined"
+        "MISSED" -> if (isMe) "No answer" else "Missed $kind"
+        "CANCELED" -> if (isMe) "Call cancelled" else "Missed $kind"
+        else -> "Call"
+    }
+    val tint = if (missedForMe) Color(0xFFEF4444) else (if (isDarkMode) Color(0xFFE2E8F0) else Color(0xFF1E293B))
+    Surface(
+        shape = RoundedCornerShape(18.dp),
+        color = if (isDarkMode) Color(0xFF1E2235) else Color(0xFFE2E8F0)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Icon(
+                imageVector = if (log.video) Icons.Filled.Videocam else Icons.Filled.Call,
+                contentDescription = null,
+                tint = tint,
+                modifier = Modifier.size(18.dp)
+            )
+            Text(label, color = tint, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+        }
+    }
+}
+
 private fun parseCallInvite(text: String): Pair<Boolean, String>? {
     val video = "Started a video call: "
     val voice = "Started a voice call: "
