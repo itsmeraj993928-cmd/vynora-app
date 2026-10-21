@@ -244,6 +244,7 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
                     val peer = try { repository.getUserProfile(call.callerId) } catch (e: Exception) { null }
                         ?: User(id = call.callerId, username = "Someone")
                     _uiState.update { it.copy(incomingCall = call, callPeer = peer.copy(id = call.callerId)) }
+                    viewModelScope.launch { repository.markCallDelivered(call.id) }
                     showIncomingCallNotification(call, peer)
                     incomingTimeoutJob?.cancel()
                     incomingTimeoutJob = viewModelScope.launch {
@@ -1048,6 +1049,18 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
     // ---- In-app voice / video calls (Agora for media, Firestore "calls" for ringing) ----
     private var callWatchJob: kotlinx.coroutines.Job? = null
     private var incomingTimeoutJob: kotlinx.coroutines.Job? = null
+    private var callAnsweredAt = 0L
+    private val loggedCallIds = HashSet<String>()
+
+    /** The caller's phone writes one line into the chat: duration, missed, declined... */
+    private fun logCall(call: CallInfo, finalStatus: String) {
+        val me = _uiState.value.currentUser?.id
+        if (call.callerId != me || call.conversationId.isBlank()) return
+        if (!loggedCallIds.add(call.id)) return
+        val secs = if (finalStatus == "ENDED" && callAnsweredAt > 0L)
+            ((System.currentTimeMillis() - callAnsweredAt) / 1000L).toInt() else 0
+        sendMessage(call.conversationId, "[call]${if (call.video) "video" else "voice"}|$finalStatus|$secs")
+    }
 
     private fun cancelCallNotification() {
         try {
@@ -1102,6 +1115,7 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
     private var ringTimeoutJob: kotlinx.coroutines.Job? = null
 
     private fun clearCallLocally() {
+        callAnsweredAt = 0L
         incomingTimeoutJob?.cancel(); incomingTimeoutJob = null
         cancelCallNotification()
         callWatchJob?.cancel(); callWatchJob = null
@@ -1116,16 +1130,17 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
                 if (c == null) return@collect
                 val me = _uiState.value.currentUser?.id
                 if (c.status in listOf("ENDED", "DECLINED", "CANCELED", "MISSED")) {
-                    if (c.status == "DECLINED" && c.callerId == me) showToast("Call declined")
+                    logCall(c, c.status)
                     clearCallLocally()
                 } else {
+                    if (c.status == "ACCEPTED" && callAnsweredAt == 0L) callAnsweredAt = System.currentTimeMillis()
                     _uiState.update { st -> if (st.activeCall?.id == c.id) st.copy(activeCall = c) else st }
                 }
             }
         }
     }
 
-    fun placeCall(peer: User, video: Boolean) {
+    fun placeCall(peer: User, video: Boolean, conversationId: String = "") {
         val me = _uiState.value.currentUser ?: return
         if (peer.id.isBlank() || peer.id == me.id) return
         if (_uiState.value.activeCall != null || _uiState.value.incomingCall != null) {
@@ -1140,8 +1155,10 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
             video = video,
             status = "RINGING",
             channel = "call_${now}_${me.id.takeLast(4)}",
+            conversationId = conversationId,
             createdAt = now
         )
+        if (conversationId.isNotBlank()) pendingChatParticipants[conversationId] = peer
         _uiState.update { it.copy(activeCall = call, callPeer = peer) }
         viewModelScope.launch { repository.createCall(call) }
         watchCall(call.id)
@@ -1151,6 +1168,7 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
             val cur = _uiState.value.activeCall
             if (cur?.id == call.id && cur.status == "RINGING") {
                 repository.updateCallStatus(call.id, "MISSED")
+                logCall(cur, "MISSED")
                 clearCallLocally()
                 showToast("No answer")
             }
@@ -1176,6 +1194,7 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
         val c = _uiState.value.activeCall ?: return
         val me = _uiState.value.currentUser?.id
         val status = if (c.status == "RINGING" && c.callerId == me) "CANCELED" else "ENDED"
+        logCall(c, status)
         clearCallLocally()
         viewModelScope.launch { repository.updateCallStatus(c.id, status) }
     }
