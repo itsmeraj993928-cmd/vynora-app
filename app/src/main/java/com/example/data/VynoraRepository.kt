@@ -1019,6 +1019,14 @@ class VynoraRepository(
         }
     }
 
+    suspend fun saveMoment(moment: Moment) {
+        try {
+            db.collection("moments").document(moment.id).set(moment).await()
+        } catch (e: Exception) {
+            Log.w("VynoraRepo", "saveMoment failed", e)
+        }
+    }
+
     suspend fun createCall(call: CallInfo) {
         try {
             db.collection("calls").document(call.id).set(call).await()
@@ -1055,7 +1063,7 @@ class VynoraRepository(
                 }
                 val now = System.currentTimeMillis()
                 val fresh = snap?.toObjects(CallInfo::class.java)
-                    ?.filter { now - it.createdAt < 60_000L }
+                    ?.filter { Math.abs(now - it.createdAt) < 10 * 60_000L }
                     ?.maxByOrNull { it.createdAt }
                 trySend(fresh)
             }
