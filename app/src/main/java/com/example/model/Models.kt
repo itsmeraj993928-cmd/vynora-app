@@ -248,5 +248,7 @@ data class CallInfo(
     val video: Boolean = false,
     val status: String = "RINGING", // RINGING, ACCEPTED, DECLINED, CANCELED, MISSED, ENDED
     val channel: String = "",
+    val conversationId: String = "",
+    val delivered: Boolean = false, // set by the other phone when it received the call (shows "Ringing")
     val createdAt: Long = 0L
 )
