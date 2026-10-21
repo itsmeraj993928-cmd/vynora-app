@@ -1043,6 +1043,14 @@ class VynoraRepository(
         }
     }
 
+    suspend fun markCallDelivered(callId: String) {
+        try {
+            db.collection("calls").document(callId).update("delivered", true).await()
+        } catch (e: Exception) {
+            Log.w("VynoraRepo", "markCallDelivered failed", e)
+        }
+    }
+
     fun observeCall(callId: String): Flow<CallInfo?> = callbackFlow {
         val listener = db.collection("calls").document(callId).addSnapshotListener { snap, error ->
             if (error != null) return@addSnapshotListener
