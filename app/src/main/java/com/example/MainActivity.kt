@@ -113,6 +113,8 @@ fun VynoraApp(viewModel: VynoraViewModel) {
     val savedAccountsList by viewModel.savedAccounts.collectAsStateWithLifecycle()
     val switchPasswordFor by viewModel.switchPasswordFor.collectAsStateWithLifecycle()
     val momentViewers by viewModel.momentViewers.collectAsStateWithLifecycle()
+    val isRefreshing by viewModel.isRefreshing.collectAsStateWithLifecycle()
+    val pollVotes by viewModel.pollVotes.collectAsStateWithLifecycle()
     var shareClip by remember { mutableStateOf<com.example.model.Clip?>(null) }
 
     // Handle Android system back press
@@ -232,11 +234,16 @@ fun VynoraApp(viewModel: VynoraViewModel) {
                                         onShareClick = { post -> viewModel.openShare(post) },
                                         onReportClick = { type, id, username -> viewModel.openReportDialog(type, id, username) },
                                         onAuthorClick = { username -> viewModel.openUserProfileByUsername(username) },
-                                        onFollowAuthor = { id, username -> viewModel.toggleFollowById(id, username) }
+                                        onFollowAuthor = { id, username -> viewModel.toggleFollowById(id, username) },
+                                        isRefreshing = isRefreshing,
+                                        onRefresh = { viewModel.refreshAll() },
+                                        onSaveNote = { t, sg -> viewModel.saveNote(t, sg) }
                                     )
                                 }
                                 MainTab.EXPLORE -> {
                                     ExploreScreen(
+                                        isRefreshing = isRefreshing,
+                                        onRefresh = { viewModel.refreshAll() },
                                         posts = uiState.posts.filter { it.author.id != uiState.currentUser?.id },
                                         isDarkMode = uiState.isDarkMode,
                                         onUserClick = { username -> viewModel.openUserProfileByUsername(username) },
@@ -310,6 +317,7 @@ fun VynoraApp(viewModel: VynoraViewModel) {
                                         onSwitchAccount = { accId, ident -> viewModel.switchAccount(accId, ident) },
                                         onOpenFollowList = { tab -> uiState.currentUser?.let { viewModel.openFollowList(it.id, it.username, tab) } },
                                         onAddAccount = { viewModel.addAccount() },
+                                        onSaveNote = { t, sg -> viewModel.saveNote(t, sg) },
                                         switchPasswordFor = switchPasswordFor,
                                         onSubmitSwitchPassword = { pw -> viewModel.submitSwitchPassword(pw) },
                                         onDismissSwitchPassword = { viewModel.dismissSwitchPassword() },
@@ -378,6 +386,8 @@ fun VynoraApp(viewModel: VynoraViewModel) {
                     onToast = { msg -> viewModel.showToast(msg) },
                     viewers = momentViewers,
                     onMomentShown = { m -> viewModel.onMomentShown(m) },
+                    pollVotes = pollVotes,
+                    onVotePoll = { m, opt -> viewModel.voteMomentPoll(m, opt) },
                     onOpenProfile = { uid -> viewModel.openUserProfile(uid) }
                 )
             }
@@ -429,6 +439,8 @@ fun VynoraApp(viewModel: VynoraViewModel) {
                     onDispose { viewModel.markNotificationsSeen() }
                 }
                 NotificationsScreen(
+                    isRefreshing = isRefreshing,
+                    onRefresh = { viewModel.refreshAll() },
                     notifications = uiState.notifications,
                     isDarkMode = uiState.isDarkMode,
                     onMarkAllAsRead = { viewModel.markAllNotificationsRead() },

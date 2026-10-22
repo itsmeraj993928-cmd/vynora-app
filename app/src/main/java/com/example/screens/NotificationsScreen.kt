@@ -28,6 +28,7 @@ import com.example.model.NotificationType
 import com.example.ui.theme.VynoraNeonCyan
 import com.example.ui.theme.VynoraNeonPink
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NotificationsScreen(
     notifications: List<NotificationItem>,
@@ -38,7 +39,9 @@ fun NotificationsScreen(
     onFollowBack: (String, String) -> Unit = { _, _ -> },
     onPostClick: (String, String?) -> Unit = { _, _ -> },
     isFollowing: (String) -> Boolean = { false },
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    isRefreshing: Boolean = false,
+    onRefresh: () -> Unit = {}
 ) {
     var selectedFilter by remember { mutableStateOf("All") }
     val filters = listOf("All", "Likes", "Comments", "Follows", "Mentions")
@@ -160,6 +163,11 @@ fun NotificationsScreen(
                 }
             }
         } else {
+            PullToRefreshBox(
+                isRefreshing = isRefreshing,
+                onRefresh = onRefresh,
+                modifier = Modifier.fillMaxSize()
+            ) {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(bottom = 24.dp)
@@ -192,6 +200,7 @@ fun NotificationsScreen(
                     }
                 }
             }
+}
         }
     }
 }

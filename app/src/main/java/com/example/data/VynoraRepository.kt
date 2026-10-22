@@ -489,7 +489,12 @@ class VynoraRepository(
                                 author = m.author.copy(
                                     username = full.username.ifBlank { m.author.username },
                                     fullName = full.fullName.ifBlank { m.author.fullName },
-                                    avatarUrl = full.avatarUrl.ifBlank { m.author.avatarUrl }
+                                    avatarUrl = full.avatarUrl.ifBlank { m.author.avatarUrl },
+                                    note = full.note,
+                                    noteSong = full.noteSong,
+                                    noteSongUrl = full.noteSongUrl,
+                                    noteAt = full.noteAt,
+                                    streakCount = full.streakCount
                                 )
                             )
                         }
@@ -1097,6 +1102,65 @@ class VynoraRepository(
                     .sortedByDescending { it.getLong("viewedAt") ?: 0L }
                     .map { it.id }
                 launch { trySend(ids.map { loadUserCached(it) }) }
+            }
+        awaitClose { listener.remove() }
+    }
+
+    suspend fun setStreak(uid: String, count: Int, day: String) {
+        try {
+            db.collection("users").document(uid).update(mapOf("streakCount" to count, "lastStreakDay" to day)).await()
+            userCache.remove(uid)
+        } catch (e: Exception) {
+            Log.w("VynoraRepo", "setStreak failed", e)
+        }
+    }
+
+    /** Sets (or clears when [note] is blank) the profile note. */
+    suspend fun setNote(uid: String, note: String, song: String, songUrl: String): Boolean {
+        return try {
+            db.collection("users").document(uid).update(
+                mapOf(
+                    "note" to note,
+                    "noteSong" to song,
+                    "noteSongUrl" to songUrl,
+                    "noteAt" to if (note.isBlank()) 0L else System.currentTimeMillis()
+                )
+            ).await()
+            userCache.remove(uid)
+            true
+        } catch (e: Exception) {
+            Log.w("VynoraRepo", "setNote failed", e)
+            false
+        }
+    }
+
+    /** One vote per person; voting again just changes the choice. option: 0 = A, 1 = B */
+    suspend fun voteMomentPoll(momentId: String, voterId: String, option: Int) {
+        try {
+            db.collection("moments").document(momentId)
+                .collection("votes").document(voterId)
+                .set(mapOf("userId" to voterId, "option" to option, "votedAt" to System.currentTimeMillis()))
+                .await()
+        } catch (e: Exception) {
+            Log.w("VynoraRepo", "voteMomentPoll failed", e)
+        }
+    }
+
+    fun observeMomentPollVotes(momentId: String, myId: String): Flow<PollVotes> = callbackFlow {
+        val listener = db.collection("moments").document(momentId)
+            .collection("votes")
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    Log.w("VynoraRepo", "votes listener error", error)
+                    return@addSnapshotListener
+                }
+                var a = 0; var b = 0; var mine = -1
+                snapshot?.documents?.forEach { d ->
+                    val o = (d.getLong("option") ?: -1L).toInt()
+                    if (o == 0) a++ else if (o == 1) b++
+                    if (d.id == myId) mine = o
+                }
+                trySend(PollVotes(a, b, mine))
             }
         awaitClose { listener.remove() }
     }

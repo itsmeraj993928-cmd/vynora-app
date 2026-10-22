@@ -168,6 +168,10 @@ fun CreateStudioScreen(
     var showAudienceDialog by remember { mutableStateOf(false) }
     var selectedSong by remember { mutableStateOf<com.example.util.MusicTrack?>(null) }
     var showMusicPicker by remember { mutableStateOf(false) }
+    var pollQ by remember { mutableStateOf("") }
+    var pollA by remember { mutableStateOf("Yes") }
+    var pollB by remember { mutableStateOf("No") }
+    var showPollDialog by remember { mutableStateOf(false) }
 
     var picked by remember { mutableStateOf<GalleryItem?>(null) }
     var pickedSizeMb by remember { mutableStateOf(0f) }
@@ -239,6 +243,30 @@ fun CreateStudioScreen(
     }
 
     val title = when (mode) { CreateMode.CLIP -> "New reel"; CreateMode.MOMENT -> "New story"; else -> "New post" }
+
+    if (showPollDialog) {
+        var q by remember { mutableStateOf(pollQ) }
+        var a by remember { mutableStateOf(pollA) }
+        var b by remember { mutableStateOf(pollB) }
+        AlertDialog(
+            onDismissRequest = { showPollDialog = false },
+            title = { Text("Add poll") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(value = q, onValueChange = { q = it.take(80) }, label = { Text("Question") }, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(value = a, onValueChange = { a = it.take(24) }, label = { Text("Option 1") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(value = b, onValueChange = { b = it.take(24) }, label = { Text("Option 2") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = q.isNotBlank() && a.isNotBlank() && b.isNotBlank(),
+                    onClick = { pollQ = q.trim(); pollA = a.trim(); pollB = b.trim(); showPollDialog = false }
+                ) { Text("Done", color = VynoraNeonPink) }
+            },
+            dismissButton = { TextButton(onClick = { showPollDialog = false }) { Text("Cancel") } }
+        )
+    }
 
     if (showMusicPicker) {
         MusicPickerSheet(
@@ -449,6 +477,16 @@ fun CreateStudioScreen(
                     }
                     if (mode == CreateMode.MOMENT) {
                         HorizontalDivider(color = if (isDarkMode) Color(0x22FFFFFF) else Color(0x1F000000))
+                        SettingRow(
+                            Icons.Outlined.Poll,
+                            if (pollQ.isBlank()) "Add poll" else "Poll: $pollQ",
+                            if (pollQ.isBlank()) null else "Edit",
+                            fg, sub
+                        ) { showPollDialog = true }
+                        if (pollQ.isNotBlank()) {
+                            TextButton(onClick = { pollQ = "" }) { Text("Remove poll", color = VynoraNeonPink, fontSize = 12.sp) }
+                        }
+                        HorizontalDivider(color = if (isDarkMode) Color(0x22FFFFFF) else Color(0x1F000000))
                         Row(
                             modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically
@@ -496,6 +534,9 @@ fun CreateStudioScreen(
                             if (hideLikes) add("HIDE_LIKES")
                             if (hideShares) add("HIDE_SHARES")
                             if (commentsOff) add("NO_COMMENTS")
+                            if (mode == CreateMode.MOMENT && pollQ.isNotBlank()) {
+                                add("POLL:" + pollQ.trim().replace("|", " ") + "|" + pollA.trim().replace("|", " ") + "|" + pollB.trim().replace("|", " "))
+                            }
                         }
                         onStartBackgroundUpload(
                             kindName, p.uri, finalCaption, finalTags, location.ifBlank { null },
@@ -504,6 +545,7 @@ fun CreateStudioScreen(
                             isCloseFriends, flags
                         )
                         selectedSong = null
+                        pollQ = ""
                         picked = null; pickedSizeMb = 0f; caption = ""; location = ""; selectedFilter = "Original"
                         hideLikes = false; hideShares = false; commentsOff = false; confirmSafeContent = false
                         step = 0
@@ -640,7 +682,7 @@ private fun ToggleRow(
 /** Suggested + searchable online songs. Tap the art to preview, "Use" to attach (stories and reels). */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun MusicPickerSheet(
+internal fun MusicPickerSheet(
     isDarkMode: Boolean,
     onPick: (com.example.util.MusicTrack) -> Unit,
     onDismiss: () -> Unit
