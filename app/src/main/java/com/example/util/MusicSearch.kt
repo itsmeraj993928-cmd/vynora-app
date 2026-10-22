@@ -74,4 +74,59 @@ object MusicSearch {
             Result.failure(e)
         }
     }
+
+    /** Quick filter chips shown above the suggestions. */
+    val moods = listOf("Trending", "Bollywood", "Punjabi", "Romantic", "Lofi", "Devotional", "Party", "Sad")
+
+    private fun httpGet(u: String): String? {
+        val conn = (URL(u).openConnection() as HttpURLConnection).apply {
+            connectTimeout = 10_000; readTimeout = 10_000; requestMethod = "GET"
+        }
+        return try {
+            if (conn.responseCode != 200) null else conn.inputStream.bufferedReader().use { it.readText() }
+        } finally { conn.disconnect() }
+    }
+
+    /**
+     * Songs shown before the user types anything.
+     * Uses the iTunes "Top songs in India" chart; falls back to a few popular searches.
+     */
+    suspend fun suggestions(): List<MusicTrack> = withContext(Dispatchers.IO) {
+        val fromChart = try { topChartIndia() } catch (e: Exception) { emptyList() }
+        if (fromChart.isNotEmpty()) return@withContext fromChart
+        val out = LinkedHashMap<String, MusicTrack>()
+        for (q in listOf("Arijit Singh", "Bollywood hits", "Punjabi hits", "Hindi romantic")) {
+            val r = search(q, 10).getOrNull() ?: continue
+            r.forEach { out.putIfAbsent(it.previewUrl, it) }
+        }
+        out.values.toList()
+    }
+
+    private fun topChartIndia(): List<MusicTrack> {
+        val body = httpGet("https://itunes.apple.com/in/rss/topsongs/limit=30/json") ?: return emptyList()
+        val entries = JSONObject(body).optJSONObject("feed")?.optJSONArray("entry") ?: return emptyList()
+        val out = ArrayList<MusicTrack>()
+        for (i in 0 until entries.length()) {
+            val e = entries.getJSONObject(i)
+            val title = e.optJSONObject("im:name")?.optString("label") ?: continue
+            val artist = e.optJSONObject("im:artist")?.optString("label") ?: ""
+            val images = e.optJSONArray("im:image")
+            val art = if (images != null && images.length() > 0) images.getJSONObject(images.length() - 1).optString("label") else ""
+            var preview = ""
+            val links = e.opt("link")
+            val linkList = when (links) {
+                is org.json.JSONArray -> (0 until links.length()).mapNotNull { links.optJSONObject(it) }
+                is JSONObject -> listOf(links)
+                else -> emptyList()
+            }
+            for (l in linkList) {
+                val a = l.optJSONObject("attributes") ?: continue
+                if (a.optString("im:assetType") == "preview" || a.optString("type").startsWith("audio")) {
+                    preview = a.optString("href"); break
+                }
+            }
+            if (preview.isNotBlank()) out.add(MusicTrack(title, artist, preview, art))
+        }
+        return out
+    }
 }

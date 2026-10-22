@@ -257,6 +257,7 @@ private fun ClipItemView(
             url = clip.mediaUrl,
             shouldPlay = isPlaying && isCurrentPage,
             isMuted = isMuted,
+            musicUrl = clip.musicUrl,
             modifier = Modifier.fillMaxSize()
         )
 
@@ -568,9 +569,46 @@ private fun ClipVideoPlayer(
     url: String,
     shouldPlay: Boolean,
     isMuted: Boolean,
+    musicUrl: String = "",
     modifier: Modifier = Modifier
 ) {
     val videoUrl = remember(url) { toPlayableVideoUrl(url) }
+    val hasSong = musicUrl.isNotBlank()
+
+    // Song chosen for this reel: it plays instead of the video's own sound
+    var song by remember(musicUrl) { mutableStateOf<android.media.MediaPlayer?>(null) }
+    DisposableEffect(musicUrl) {
+        var mp: android.media.MediaPlayer? = null
+        if (hasSong) {
+            try {
+                mp = android.media.MediaPlayer().apply {
+                    setAudioAttributes(
+                        android.media.AudioAttributes.Builder()
+                            .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
+                            .setContentType(android.media.AudioAttributes.CONTENT_TYPE_MUSIC)
+                            .build()
+                    )
+                    setDataSource(musicUrl)
+                    isLooping = true
+                    setOnPreparedListener { song = it }
+                    setOnErrorListener { _, _, _ -> true }
+                    prepareAsync()
+                }
+            } catch (e: Exception) { mp = null }
+        }
+        onDispose {
+            try { mp?.stop() } catch (e: Exception) { }
+            try { mp?.release() } catch (e: Exception) { }
+            song = null
+        }
+    }
+    LaunchedEffect(song, shouldPlay, isMuted) {
+        val sp = song ?: return@LaunchedEffect
+        try {
+            if (shouldPlay && !isMuted) { if (!sp.isPlaying) sp.start() }
+            else if (sp.isPlaying) sp.pause()
+        } catch (e: Exception) { }
+    }
     var hasError by remember(videoUrl) { mutableStateOf(false) }
     var isReady by remember(videoUrl) { mutableStateOf(false) }
     var player by remember(videoUrl) { mutableStateOf<android.media.MediaPlayer?>(null) }
@@ -593,7 +631,7 @@ private fun ClipVideoPlayer(
                 }
             },
             update = { vv ->
-                val volume = if (isMuted) 0f else 1f
+                val volume = if (isMuted || hasSong) 0f else 1f
                 player?.let {
                     try { it.setVolume(volume, volume) } catch (_: Throwable) { }
                 }
