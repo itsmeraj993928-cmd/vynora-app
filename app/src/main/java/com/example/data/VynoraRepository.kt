@@ -479,6 +479,23 @@ class VynoraRepository(
                 }
                 val moments = snapshot?.toObjects(Moment::class.java) ?: emptyList()
                 trySend(moments)
+                // fill in each author's real profile photo/name (story docs may carry an old or empty copy)
+                launch {
+                    val enriched = moments.map { m ->
+                        if (m.author.id.isBlank()) m
+                        else {
+                            val full = loadUserCached(m.author.id)
+                            m.copy(
+                                author = m.author.copy(
+                                    username = full.username.ifBlank { m.author.username },
+                                    fullName = full.fullName.ifBlank { m.author.fullName },
+                                    avatarUrl = full.avatarUrl.ifBlank { m.author.avatarUrl }
+                                )
+                            )
+                        }
+                    }
+                    trySend(enriched)
+                }
             }
         awaitClose { listener.remove() }
     }
@@ -694,6 +711,25 @@ class VynoraRepository(
                 .documents.mapNotNull { it.getString("followerId") }.distinct()
         } catch (e: Exception) {
             Log.e("VynoraRepository", "Error loading followers: ${e.message}", e)
+            emptyList()
+        }
+    }
+
+    /** Finds accounts whose username starts with [prefix] (case-insensitive, usernames are stored lowercase). */
+    suspend fun searchUsersByPrefix(prefix: String, limit: Long = 20): List<User> {
+        val q = prefix.trim().removePrefix("@").lowercase()
+        if (q.isBlank()) return emptyList()
+        return try {
+            db.collection("users")
+                .orderBy("username")
+                .startAt(q)
+                .endAt(q + "\uf8ff")
+                .limit(limit)
+                .get().await()
+                .toObjects(User::class.java)
+                .filter { it.username.isNotBlank() }
+        } catch (e: Exception) {
+            Log.w("VynoraRepo", "searchUsersByPrefix failed", e)
             emptyList()
         }
     }

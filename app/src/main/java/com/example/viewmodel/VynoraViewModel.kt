@@ -1035,12 +1035,53 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
         showToast("Report submitted to moderation team. Thank you for keeping VYNORA safe.")
     }
 
+    /**
+     * People you can send things to: recent chats first, then mutuals (follow + follow back),
+     * then people you follow, then your followers.
+     */
     suspend fun loadShareTargets(): List<User> {
         val me = _uiState.value.currentUser ?: return emptyList()
         val chatIds = _uiState.value.chats.filter { !it.isGroup }.map { it.participant.id }
-        val followingIds = try { repository.getFollowingIds(me.id).toList() } catch (e: Exception) { emptyList() }
-        val ids = (chatIds + followingIds).filter { it.isNotBlank() && it != me.id }.distinct().take(60)
+        val following = try { repository.getFollowingIds(me.id) } catch (e: Exception) { emptySet() }
+        val followers = try { repository.getFollowerIds(me.id) } catch (e: Exception) { emptyList() }
+        val mutuals = followers.filter { it in following }
+        val ids = (chatIds + mutuals + following.toList() + followers)
+            .filter { it.isNotBlank() && it != me.id }.distinct().take(100)
         return try { repository.getUsersByIds(ids).filter { it.username.isNotBlank() } } catch (e: Exception) { emptyList() }
+    }
+
+    /** Search any account by username (for the share sheet search box). */
+    suspend fun searchShareUsers(query: String): List<User> {
+        val me = _uiState.value.currentUser?.id
+        return repository.searchUsersByPrefix(query).filter { it.id != me }
+    }
+
+    private fun sendToUsers(targets: List<User>, text: String, doneLabel: String) {
+        val me = _uiState.value.currentUser ?: return
+        var sent = 0
+        for (target in targets) {
+            if (target.id.isBlank() || target.id == me.id) continue
+            val existing = _uiState.value.chats.firstOrNull { !it.isGroup && it.participant.id == target.id }
+            val convId = existing?.id ?: if (me.id < target.id) "${me.id}_${target.id}" else "${target.id}_${me.id}"
+            pendingChatParticipants[convId] = target
+            sendMessage(convId, text)
+            sent++
+        }
+        if (sent > 0) showToast(if (sent == 1) "$doneLabel sent" else "$doneLabel sent to $sent people")
+    }
+
+    fun sharePostToUsers(post: Post, targets: List<User>) {
+        sendToUsers(targets, "Shared post: https://vynora.io/p/${post.id}", "Post")
+    }
+
+    /** Re-share a photo post to my own story. */
+    fun addPostToStory(post: Post) {
+        val url = post.mediaUrls.firstOrNull()
+        if (url.isNullOrBlank() || post.isVideo) {
+            showToast("Only photo posts can be added to your story")
+            return
+        }
+        publishMoment("", url, null, false)
     }
 
     fun shareClipToUsers(clip: Clip, targets: List<User>) {
@@ -1583,13 +1624,19 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
         commentsOff: Boolean = false
     ) {
         val user = _uiState.value.currentUser ?: return
+        // a song picked in the studio arrives as "Title • Artist" + preview url
+        val (pickedLabel, pickedUrl) = com.example.util.MusicTrack.unpack(musicTitle)
+        val labelParts = pickedLabel.split(" • ", limit = 2)
+        val finalTitle = labelParts[0]
+        val finalArtist = if (pickedUrl.isNotBlank() && labelParts.size > 1) labelParts[1] else musicArtist
         val newClip = Clip(
             id = "c_${System.currentTimeMillis()}",
             author = user,
             mediaUrl = mediaUrl,
             caption = caption,
-            musicTitle = musicTitle,
-            musicArtist = if (musicTitle == "Original audio") user.username else musicArtist,
+            musicTitle = finalTitle,
+            musicUrl = pickedUrl,
+            musicArtist = if (finalTitle == "Original audio") user.username else finalArtist,
             hideLikeCount = hideLikes,
             hideShareCount = hideShares,
             commentsOff = commentsOff,

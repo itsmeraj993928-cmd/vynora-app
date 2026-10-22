@@ -433,7 +433,7 @@ fun CreateStudioScreen(
                         when (visibility) { "FOLLOWERS" -> "Followers"; "PRIVATE" -> "Only me"; else -> "Public" },
                         fg, sub
                     ) { showAudienceDialog = true }
-                    if (mode == CreateMode.MOMENT) {
+                    if (mode == CreateMode.MOMENT || mode == CreateMode.CLIP) {
                         HorizontalDivider(color = if (isDarkMode) Color(0x22FFFFFF) else Color(0x1F000000))
                         SettingRow(
                             Icons.Outlined.MusicNote,
@@ -446,6 +446,8 @@ fun CreateStudioScreen(
                                 Text("Remove music", color = VynoraNeonPink, fontSize = 12.sp)
                             }
                         }
+                    }
+                    if (mode == CreateMode.MOMENT) {
                         HorizontalDivider(color = if (isDarkMode) Color(0x22FFFFFF) else Color(0x1F000000))
                         Row(
                             modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
@@ -498,7 +500,7 @@ fun CreateStudioScreen(
                         onStartBackgroundUpload(
                             kindName, p.uri, finalCaption, finalTags, location.ifBlank { null },
                             selectedFilter, visibility,
-                            if (mode == CreateMode.MOMENT) (selectedSong?.pack() ?: "Original audio") else "Original audio",
+                            if (mode == CreateMode.MOMENT || mode == CreateMode.CLIP) (selectedSong?.pack() ?: "Original audio") else "Original audio",
                             isCloseFriends, flags
                         )
                         selectedSong = null
@@ -635,7 +637,7 @@ private fun ToggleRow(
 }
 
 
-/** Search online songs, tap to preview, tap "Use" to attach to the story. */
+/** Suggested + searchable online songs. Tap the art to preview, "Use" to attach (stories and reels). */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun MusicPickerSheet(
@@ -646,7 +648,8 @@ private fun MusicPickerSheet(
     val fg = if (isDarkMode) Color.White else Color(0xFF0F172A)
     val sub = if (isDarkMode) Color(0xFF94A3B8) else Color(0xFF64748B)
     var query by remember { mutableStateOf("") }
-    var loading by remember { mutableStateOf(false) }
+    var activeMood by remember { mutableStateOf("Trending") }
+    var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
     var results by remember { mutableStateOf<List<com.example.util.MusicTrack>>(emptyList()) }
     var playingUrl by remember { mutableStateOf<String?>(null) }
@@ -681,14 +684,19 @@ private fun MusicPickerSheet(
         } catch (e: Exception) { stopPlayer() }
     }
 
-    var searchTrigger by remember { mutableStateOf(0) }
-    LaunchedEffect(searchTrigger) {
-        if (query.isBlank()) return@LaunchedEffect
+    // Load suggestions first; when the user types, search after a short pause (or when a mood chip is tapped)
+    LaunchedEffect(query, activeMood) {
+        val q = query.trim()
+        if (q.isNotEmpty()) kotlinx.coroutines.delay(500)
         loading = true; error = null
-        val r = com.example.util.MusicSearch.search(query)
+        val r: Result<List<com.example.util.MusicTrack>> = when {
+            q.isNotEmpty() -> com.example.util.MusicSearch.search(q)
+            activeMood == "Trending" -> Result.success(com.example.util.MusicSearch.suggestions())
+            else -> com.example.util.MusicSearch.search("$activeMood songs")
+        }
         loading = false
         r.onSuccess { results = it; if (it.isEmpty()) error = "No songs found" }
-            .onFailure { error = "Could not search songs. Check your internet." }
+            .onFailure { results = emptyList(); error = "Could not load songs. Check your internet." }
     }
 
     ModalBottomSheet(
@@ -704,18 +712,33 @@ private fun MusicPickerSheet(
                 singleLine = true,
                 placeholder = { Text("Search songs or artists") },
                 leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null) },
-                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Search),
-                keyboardActions = androidx.compose.foundation.text.KeyboardActions(onSearch = { searchTrigger++ }),
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(14.dp)
             )
             Spacer(modifier = Modifier.height(8.dp))
+            if (query.isBlank()) {
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(com.example.util.MusicSearch.moods.size) { i ->
+                        val m = com.example.util.MusicSearch.moods[i]
+                        FilterChip(
+                            selected = activeMood == m,
+                            onClick = { activeMood = m },
+                            label = { Text(m, fontSize = 12.sp) },
+                            colors = FilterChipDefaults.filterChipColors(selectedContainerColor = VynoraNeonCyan, selectedLabelColor = Color.Black)
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    if (activeMood == "Trending") "Suggested for you" else activeMood,
+                    color = sub, fontSize = 12.sp, fontWeight = FontWeight.SemiBold
+                )
+            }
             when {
                 loading -> Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(color = VynoraNeonCyan, strokeWidth = 2.dp)
                 }
                 error != null -> Text(error ?: "", color = sub, fontSize = 13.sp, modifier = Modifier.padding(12.dp))
-                results.isEmpty() -> Text("Type a song name and press search", color = sub, fontSize = 13.sp, modifier = Modifier.padding(12.dp))
             }
             androidx.compose.foundation.lazy.LazyColumn(modifier = Modifier.heightIn(max = 420.dp)) {
                 items(results.size) { i ->

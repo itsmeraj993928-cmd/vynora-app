@@ -42,7 +42,11 @@ fun ClipShareSheet(
     onCopyLink: () -> Unit,
     onWhatsApp: () -> Unit,
     onMore: () -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    /** Optional: search ANY account by username (not only people you follow) */
+    search: (suspend (String) -> List<User>)? = null,
+    /** Optional: shows an "Add to story" button */
+    onAddToStory: (() -> Unit)? = null
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val bg = if (isDarkMode) Color(0xFF0F121E) else Color.White
@@ -50,9 +54,22 @@ fun ClipShareSheet(
     val subColor = if (isDarkMode) Color(0xFF94A3B8) else Color(0xFF64748B)
 
     var query by remember { mutableStateOf("") }
-    var selectedIds by remember { mutableStateOf(setOf<String>()) }
+    val selectedUsers = remember { androidx.compose.runtime.mutableStateMapOf<String, User>() }
+    val selectedIds = selectedUsers.keys
+    fun toggle(u: User) { if (selectedUsers.containsKey(u.id)) selectedUsers.remove(u.id) else selectedUsers[u.id] = u }
+    var remoteResults by remember { mutableStateOf<List<User>>(emptyList()) }
+    val queryNow = query
     val targets by produceState<List<User>?>(initialValue = null) {
         value = try { loadTargets() } catch (e: Exception) { emptyList() }
+    }
+
+    LaunchedEffect(queryNow) {
+        remoteResults = emptyList()
+        val q = queryNow.trim()
+        if (q.length >= 2 && search != null) {
+            kotlinx.coroutines.delay(350)
+            remoteResults = try { search(q) } catch (e: Exception) { emptyList() }
+        }
     }
 
     ModalBottomSheet(
@@ -82,20 +99,21 @@ fun ClipShareSheet(
             Spacer(modifier = Modifier.height(12.dp))
 
             val list = targets
-            val filtered = (list ?: emptyList()).filter {
+            val localMatches = (list ?: emptyList()).filter {
                 query.isBlank() ||
                     it.username.contains(query.trim(), ignoreCase = true) ||
                     it.fullName.contains(query.trim(), ignoreCase = true)
             }
+            val filtered = (localMatches + remoteResults).distinctBy { it.id }
 
             Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
                 when {
-                    list == null -> CircularProgressIndicator(
+                    list == null && filtered.isEmpty() -> CircularProgressIndicator(
                         modifier = Modifier.align(Alignment.Center),
                         color = VynoraNeonCyan
                     )
                     filtered.isEmpty() -> Text(
-                        text = if (list.isEmpty()) "Follow people or start a chat to share reels with them."
+                        text = if (query.isBlank()) "Follow people or start a chat to share with them."
                         else "No one found",
                         color = subColor,
                         fontSize = 13.sp,
@@ -114,7 +132,7 @@ fun ClipShareSheet(
                                 modifier = Modifier
                                     .clip(RoundedCornerShape(12.dp))
                                     .clickable {
-                                        selectedIds = if (selected) selectedIds - u.id else selectedIds + u.id
+                                        toggle(u)
                                     }
                                     .padding(4.dp)
                             ) {
@@ -132,9 +150,7 @@ fun ClipShareSheet(
                                         StoryRingAvatar(
                                             avatarUrl = u.avatarUrl,
                                             size = 66.dp,
-                                            onClick = {
-                                                selectedIds = if (selected) selectedIds - u.id else selectedIds + u.id
-                                            }
+                                            onClick = { toggle(u) }
                                         )
                                     }
                                     if (selected) {
@@ -174,8 +190,7 @@ fun ClipShareSheet(
             if (selectedIds.isNotEmpty()) {
                 Button(
                     onClick = {
-                        val chosen = (targets ?: emptyList()).filter { it.id in selectedIds }
-                        onSend(chosen)
+                        onSend(selectedUsers.values.toList())
                     },
                     modifier = Modifier
                         .fillMaxWidth()
@@ -198,6 +213,7 @@ fun ClipShareSheet(
                         .padding(vertical = 8.dp),
                     horizontalArrangement = Arrangement.SpaceEvenly
                 ) {
+                    if (onAddToStory != null) ShareAction(Icons.Outlined.AddCircleOutline, "Add to story", isDarkMode, onAddToStory)
                     ShareAction(Icons.Outlined.Link, "Copy link", isDarkMode, onCopyLink)
                     ShareAction(Icons.Outlined.Chat, "WhatsApp", isDarkMode, onWhatsApp)
                     ShareAction(Icons.Outlined.Share, "Share", isDarkMode, onMore)

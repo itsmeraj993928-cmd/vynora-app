@@ -151,6 +151,7 @@ data class Clip(
     val caption: String = "",
     val musicTitle: String = "",
     val musicArtist: String = "",
+    val musicUrl: String = "",
     val likesCount: Int = 0,
     val commentsCount: Int = 0,
     val sharesCount: Int = 0,

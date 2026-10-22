@@ -688,6 +688,7 @@ fun VynoraApp(viewModel: VynoraViewModel) {
             ClipShareSheet(
                 isDarkMode = uiState.isDarkMode,
                 loadTargets = { viewModel.loadShareTargets() },
+                search = { q -> viewModel.searchShareUsers(q) },
                 onSend = { users ->
                     viewModel.shareClipToUsers(clipToShare, users)
                     shareClip = null
@@ -731,19 +732,58 @@ fun VynoraApp(viewModel: VynoraViewModel) {
             )
         }
 
-        // 2. Share Dialog
-        if (uiState.activeSharePost != null) {
-            ShareDialog(
-                post = uiState.activeSharePost!!,
+        // 2. Share sheet for posts (Instagram style: search + people grid + quick actions)
+        uiState.activeSharePost?.let { sharePost ->
+            val postLink = "https://vynora.io/p/${sharePost.id}"
+            val postShareText = "Check out this post by @${sharePost.author.username} on VYNORA: $postLink"
+            ClipShareSheet(
                 isDarkMode = uiState.isDarkMode,
-                onDismiss = { viewModel.closeShare() },
-                onSendToUser = { username ->
-                    val targetChatId = uiState.chats.firstOrNull { it.participant.username == username }?.id
-                        ?: uiState.chats.firstOrNull()?.id
-                        ?: "chat_${com.example.util.VynoraOfficial.OFFICIAL_USER_ID}"
-                    viewModel.sendMessage(targetChatId, "Shared post: https://vynora.io/p/${uiState.activeSharePost!!.id}")
+                loadTargets = { viewModel.loadShareTargets() },
+                search = { q -> viewModel.searchShareUsers(q) },
+                onSend = { users ->
+                    viewModel.sharePostToUsers(sharePost, users)
+                    viewModel.closeShare()
                 },
-                onToast = { msg -> viewModel.showToast(msg) }
+                onAddToStory = {
+                    viewModel.addPostToStory(sharePost)
+                    viewModel.closeShare()
+                },
+                onCopyLink = {
+                    try {
+                        val cm = hostContext.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                        cm.setPrimaryClip(android.content.ClipData.newPlainText("VYNORA post", postLink))
+                        viewModel.showToast("Link copied")
+                    } catch (e: Exception) {
+                        viewModel.showToast("Could not copy link")
+                    }
+                    viewModel.closeShare()
+                },
+                onWhatsApp = {
+                    try {
+                        val i = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                            type = "text/plain"
+                            setPackage("com.whatsapp")
+                            putExtra(android.content.Intent.EXTRA_TEXT, postShareText)
+                        }
+                        hostContext.startActivity(i)
+                    } catch (e: Exception) {
+                        viewModel.showToast("WhatsApp is not installed")
+                    }
+                    viewModel.closeShare()
+                },
+                onMore = {
+                    try {
+                        val i = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                            type = "text/plain"
+                            putExtra(android.content.Intent.EXTRA_TEXT, postShareText)
+                        }
+                        hostContext.startActivity(android.content.Intent.createChooser(i, "Share post"))
+                    } catch (e: Exception) {
+                        viewModel.showToast("Could not open share options")
+                    }
+                    viewModel.closeShare()
+                },
+                onDismiss = { viewModel.closeShare() }
             )
         }
 

@@ -6,6 +6,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -54,8 +55,27 @@ fun MomentsViewerScreen(
         return
     }
 
-    var currentIndex by remember { mutableStateOf(initialIndex.coerceIn(0, moments.lastIndex)) }
-    val currentMoment = moments[currentIndex]
+    // Only the tapped person's stories play together; when they end we move to the next person.
+    val authorOrder = remember(moments) { moments.map { it.author.id }.distinct() }
+    val startMoment = remember { moments[initialIndex.coerceIn(0, moments.lastIndex)] }
+    var groupIdx by remember { mutableStateOf(authorOrder.indexOf(startMoment.author.id).coerceAtLeast(0)) }
+    val authorId = authorOrder.getOrElse(groupIdx) { authorOrder.first() }
+    val group = remember(moments, authorId) {
+        moments.filter { it.author.id == authorId }.sortedBy { it.createdAt }
+    }
+    var currentIndex by remember { mutableStateOf(group.indexOfFirst { it.id == startMoment.id }.coerceAtLeast(0)) }
+    val safeIndex = currentIndex.coerceIn(0, group.lastIndex)
+    val currentMoment = group[safeIndex]
+
+    fun goNext() {
+        if (safeIndex < group.lastIndex) currentIndex = safeIndex + 1
+        else if (groupIdx < authorOrder.lastIndex) { groupIdx++; currentIndex = 0 }
+        else onClose()
+    }
+    fun goPrev() {
+        if (safeIndex > 0) currentIndex = safeIndex - 1
+        else if (groupIdx > 0) { groupIdx--; currentIndex = 0 }
+    }
     var replyText by remember { mutableStateOf("") }
     var isLiked by remember { mutableStateOf(false) }
     var isPaused by remember { mutableStateOf(false) }
@@ -106,19 +126,15 @@ fun MomentsViewerScreen(
     LaunchedEffect(currentMoment.id) { onMomentShown(currentMoment) }
 
     // Auto-advance progress
-    LaunchedEffect(currentIndex, isPaused, showViewersSheet) {
+    LaunchedEffect(currentMoment.id, isPaused, showViewersSheet) {
         progressAnim.snapTo(0f)
         if (!isPaused && !showViewersSheet) {
             progressAnim.animateTo(
                 targetValue = 1f,
                 animationSpec = tween(durationMillis = 4500, easing = LinearEasing)
             )
-            // Move to next moment or close if last
-            if (currentIndex < moments.lastIndex) {
-                currentIndex++
-            } else {
-                onClose()
-            }
+            // Move to next story / next person, or close if last
+            goNext()
         }
     }
 
@@ -158,7 +174,19 @@ fun MomentsViewerScreen(
         Row(
             modifier = Modifier
                 .fillMaxSize()
-                .pointerInput(currentIndex) {
+                .pointerInput(currentMoment.id) {
+                    var dragTotal = 0f
+                    // swipe up = viewers list (own story), swipe down = close
+                    detectVerticalDragGestures(
+                        onDragStart = { dragTotal = 0f },
+                        onDragEnd = {
+                            if (dragTotal < -90f && currentMoment.author.id == currentUser.id) showViewersSheet = true
+                            else if (dragTotal > 220f) onClose()
+                        },
+                        onVerticalDrag = { _, amount -> dragTotal += amount }
+                    )
+                }
+                .pointerInput(currentMoment.id) {
                     detectTapGestures(
                         onPress = {
                             isPaused = true
@@ -166,11 +194,7 @@ fun MomentsViewerScreen(
                             isPaused = false
                         },
                         onTap = { offset ->
-                            if (offset.x < size.width * 0.35f) {
-                                if (currentIndex > 0) currentIndex--
-                            } else {
-                                if (currentIndex < moments.lastIndex) currentIndex++ else onClose()
-                            }
+                            if (offset.x < size.width * 0.35f) goPrev() else goNext()
                         }
                     )
                 }
@@ -190,10 +214,10 @@ fun MomentsViewerScreen(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                moments.forEachIndexed { idx, _ ->
+                group.forEachIndexed { idx, _ ->
                     val segmentProgress = when {
-                        idx < currentIndex -> 1f
-                        idx == currentIndex -> progressAnim.value
+                        idx < safeIndex -> 1f
+                        idx == safeIndex -> progressAnim.value
                         else -> 0f
                     }
                     Box(
@@ -226,17 +250,11 @@ fun MomentsViewerScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(38.dp)
-                            .clip(CircleShape)
-                    ) {
-                        AsyncImage(
-                            model = currentMoment.author.avatarUrl,
-                            contentDescription = currentMoment.author.username,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    }
+                    com.example.components.StoryRingAvatar(
+                        avatarUrl = currentMoment.author.avatarUrl,
+                        size = 38.dp,
+                        onClick = { onOpenProfile(currentMoment.author.id) }
+                    )
 
                     Column {
                         Row(
@@ -371,7 +389,7 @@ fun MomentsViewerScreen(
                         modifier = Modifier.size(16.dp)
                     )
                     Text(
-                        text = "${formatCount(maxOf(viewers.size, currentMoment.viewersCount))} viewers",
+                        text = "${formatCount(maxOf(viewers.size, currentMoment.viewersCount))} viewers  •  swipe up",
                         fontSize = 12.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = Color.White
@@ -470,11 +488,13 @@ fun MomentsViewerScreen(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
-                            AsyncImage(
-                                model = v.avatarUrl,
-                                contentDescription = v.username,
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.size(42.dp).clip(CircleShape)
+                            com.example.components.StoryRingAvatar(
+                                avatarUrl = v.avatarUrl,
+                                size = 42.dp,
+                                onClick = {
+                                    showViewersSheet = false
+                                    onOpenProfile(v.id)
+                                }
                             )
                             Column {
                                 Text("@${v.username}", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
