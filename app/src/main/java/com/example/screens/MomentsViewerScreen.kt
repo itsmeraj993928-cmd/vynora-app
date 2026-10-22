@@ -47,6 +47,8 @@ fun MomentsViewerScreen(
     onToast: (String) -> Unit,
     viewers: List<User> = emptyList(),
     onMomentShown: (Moment) -> Unit = {},
+    pollVotes: com.example.model.PollVotes = com.example.model.PollVotes(),
+    onVotePoll: (Moment, Int) -> Unit = { _, _ -> },
     onOpenProfile: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
@@ -362,6 +364,63 @@ fun MomentsViewerScreen(
                         color = Color.White,
                         modifier = Modifier.padding(horizontal = 20.dp, vertical = 14.dp)
                     )
+                }
+            }
+        }
+
+        // --- 4b. Poll sticker ---
+        if (currentMoment.pollQuestion.isNotBlank()) {
+            val isMine = currentMoment.author.id == currentUser.id
+            val showResults = isMine || pollVotes.mine >= 0
+            val total = (pollVotes.a + pollVotes.b).coerceAtLeast(1)
+            Box(
+                modifier = Modifier.fillMaxSize().padding(horizontal = 28.dp).padding(bottom = 90.dp),
+                contentAlignment = Alignment.BottomCenter
+            ) {
+                Surface(shape = RoundedCornerShape(18.dp), color = Color.White.copy(alpha = 0.95f)) {
+                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(
+                            currentMoment.pollQuestion,
+                            color = Color(0xFF0F172A), fontWeight = FontWeight.Bold, fontSize = 16.sp,
+                            modifier = Modifier.fillMaxWidth(), textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                        )
+                        listOf(0 to currentMoment.pollOptionA, 1 to currentMoment.pollOptionB).forEach { (idx, label) ->
+                            val count = if (idx == 0) pollVotes.a else pollVotes.b
+                            val pct = count * 100 / total
+                            val chosen = pollVotes.mine == idx
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(42.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(Color(0xFFE2E8F0))
+                                    .clickable(enabled = !isMine) { onVotePoll(currentMoment, idx) }
+                            ) {
+                                if (showResults) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxHeight()
+                                            .fillMaxWidth(pct / 100f)
+                                            .background(if (chosen) VynoraNeonPink.copy(alpha = 0.55f) else VynoraNeonCyan.copy(alpha = 0.4f))
+                                    )
+                                }
+                                Row(
+                                    modifier = Modifier.fillMaxSize().padding(horizontal = 14.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(label, color = Color(0xFF0F172A), fontWeight = FontWeight.SemiBold, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                                    if (showResults) Text("$pct%", color = Color(0xFF0F172A), fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                }
+                            }
+                        }
+                        if (showResults) {
+                            Text(
+                                "${pollVotes.a + pollVotes.b} votes",
+                                color = Color(0xFF64748B), fontSize = 11.sp,
+                                modifier = Modifier.fillMaxWidth(), textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                            )
+                        }
+                    }
                 }
             }
         }

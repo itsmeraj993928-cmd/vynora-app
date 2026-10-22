@@ -38,6 +38,9 @@ import com.example.i18n.VynoraStrings
 import com.example.model.Moment
 import com.example.model.Post
 import com.example.model.User
+import com.example.model.hasActiveNote
+import com.example.model.activeStreak
+import com.example.model.postedToday
 import com.example.ui.theme.VynoraNeonCyan
 import com.example.ui.theme.VynoraNeonPink
 
@@ -66,8 +69,20 @@ fun HomeScreen(
     onDeletePost: (String) -> Unit = {},
     onFollowAuthor: (id: String, username: String) -> Unit = { _, _ -> },
     isRefreshing: Boolean = false,
-    onRefresh: () -> Unit = {}
+    onRefresh: () -> Unit = {},
+    onSaveNote: (text: String, song: com.example.util.MusicTrack?) -> Unit = { _, _ -> }
 ) {
+    var showNoteDialog by remember { mutableStateOf(false) }
+    if (showNoteDialog) {
+        NoteEditDialog(
+            initialText = if (currentUser.hasActiveNote()) currentUser.note else "",
+            initialSong = if (currentUser.hasActiveNote()) currentUser.noteSong else "",
+            initialSongUrl = currentUser.noteSongUrl,
+            isDarkMode = isDarkMode,
+            onSave = { t, sg -> onSaveNote(t, sg); showNoteDialog = false },
+            onDismiss = { showNoteDialog = false }
+        )
+    }
     var postToDelete by remember { mutableStateOf<String?>(null) }
     if (postToDelete != null) {
         AlertDialog(
@@ -122,7 +137,17 @@ fun HomeScreen(
                     isDarkMode = isDarkMode,
                     currentLanguage = currentLanguage,
                     onOpenMoment = onOpenMomentsViewer,
-                    onCreateMoment = onCreateMoment
+                    onCreateMoment = onCreateMoment,
+                    onEditNote = { showNoteDialog = true }
+                )
+            }
+
+            // --- 1b. Daily challenge + streak ---
+            item {
+                DailyChallengeCard(
+                    user = currentUser,
+                    isDarkMode = isDarkMode,
+                    onPostNow = onCreateMoment
                 )
             }
 
@@ -371,7 +396,8 @@ private fun MomentsBar(
     isDarkMode: Boolean,
     currentLanguage: AppLanguage,
     onOpenMoment: (index: Int) -> Unit,
-    onCreateMoment: () -> Unit
+    onCreateMoment: () -> Unit,
+    onEditNote: () -> Unit = {}
 ) {
     LazyRow(
         modifier = Modifier
@@ -391,6 +417,20 @@ private fun MomentsBar(
                     .clickable(onClick = openMine)
                     .testTag("add_moment_button")
             ) {
+                // note bubble slot (tap to write / change my note)
+                Box(modifier = Modifier.height(30.dp), contentAlignment = Alignment.BottomCenter) {
+                    if (currentUser.hasActiveNote()) {
+                        NoteBubble(currentUser.note, currentUser.noteSong, isDarkMode, onClick = onEditNote)
+                    } else {
+                        Text(
+                            "+ Note",
+                            fontSize = 10.sp,
+                            color = VynoraNeonCyan,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable(onClick = onEditNote).padding(horizontal = 8.dp, vertical = 4.dp)
+                        )
+                    }
+                }
                 Box(
                     modifier = Modifier.size(68.dp),
                     contentAlignment = Alignment.Center
@@ -453,14 +493,24 @@ private fun MomentsBar(
         }
 
         // 2. Friends' Moments
-        itemsIndexed(moments) { index, moment ->
-            if (moment.author.id.isNotBlank() && moment.author.id == currentUser.id) return@itemsIndexed
+        // one ring per person (not one per story)
+        val others = moments.withIndex()
+            .filter { !(it.value.author.id.isNotBlank() && it.value.author.id == currentUser.id) }
+            .distinctBy { it.value.author.id.ifBlank { it.value.id } }
+        items(others.size) { k ->
+            val index = others[k].index
+            val moment = others[k].value
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier
                     .clickable { onOpenMoment(index) }
                     .testTag("moment_item_${moment.id}")
             ) {
+                Box(modifier = Modifier.height(30.dp), contentAlignment = Alignment.BottomCenter) {
+                    if (moment.author.hasActiveNote()) {
+                        NoteBubble(moment.author.note, moment.author.noteSong, isDarkMode)
+                    }
+                }
                 StoryRingAvatar(
                     avatarUrl = moment.author.avatarUrl,
                     hasStory = true,
@@ -478,6 +528,46 @@ private fun MomentsBar(
                     color = if (isDarkMode) Color(0xFFE2E8F0) else Color(0xFF1E293B),
                     maxLines = 1
                 )
+            }
+        }
+    }
+}
+
+
+@Composable
+private fun DailyChallengeCard(user: User, isDarkMode: Boolean, onPostNow: () -> Unit) {
+    val (tag, prompt) = remember { com.example.util.DailyChallenge.today() }
+    val streak = user.activeStreak()
+    val done = user.postedToday()
+    Surface(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        shape = RoundedCornerShape(20.dp),
+        color = if (isDarkMode) Color(0xFF131728) else Color.White,
+        border = androidx.compose.foundation.BorderStroke(1.dp, VynoraNeonPink.copy(alpha = 0.35f))
+    ) {
+        Row(
+            modifier = Modifier.padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text("Today's challenge  $tag", color = VynoraNeonPink, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                Text(prompt, color = if (isDarkMode) Color(0xFFE2E8F0) else Color(0xFF1E293B), fontSize = 13.sp)
+                Text(
+                    when {
+                        done && streak > 0 -> "Done for today ✅  🔥 $streak day streak"
+                        streak > 0 -> "🔥 $streak day streak - post today to keep it"
+                        else -> "Post today and start your streak 🔥"
+                    },
+                    color = Color(0xFF94A3B8), fontSize = 11.sp
+                )
+            }
+            if (!done) {
+                Button(
+                    onClick = onPostNow,
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = VynoraNeonPink)
+                ) { Text("Post", color = Color.White, fontSize = 13.sp) }
             }
         }
     }

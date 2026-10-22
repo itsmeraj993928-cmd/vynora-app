@@ -53,6 +53,14 @@ data class User(
     val isCloseFriend: Boolean = false,
     val isBanned: Boolean = false,
     val deviceId: String = "",
+    // Profile note (short status, disappears after 24 hours)
+    val note: String = "",
+    val noteSong: String = "",
+    val noteSongUrl: String = "",
+    val noteAt: Long = 0L,
+    // Posting streak (days in a row with a post, reel or story)
+    val streakCount: Int = 0,
+    val lastStreakDay: String = "", // yyyy-MM-dd (device local day)
     val createdAt: Long = System.currentTimeMillis()
 ) {
     // Check if VYNORA Plus (blue badge) is currently active
@@ -133,6 +141,9 @@ data class Moment(
     val textOverlay: String? = null,
     val musicTrack: String? = null,
     val musicUrl: String = "",
+    val pollQuestion: String = "",
+    val pollOptionA: String = "",
+    val pollOptionB: String = "",
     val timestamp: String = "",
     val createdAt: Long = System.currentTimeMillis(),
     val expiresAt: Long = System.currentTimeMillis() + (24 * 60 * 60 * 1000L),
@@ -142,6 +153,9 @@ data class Moment(
     val viewers: List<User> = emptyList(),
     val visibility: String = "PUBLIC" // PUBLIC, FOLLOWERS, PRIVATE
 )
+
+/** Live result of a story poll. [mine] is 0 (A), 1 (B) or -1 (not voted yet). */
+data class PollVotes(val a: Int = 0, val b: Int = 0, val mine: Int = -1)
 
 data class Clip(
     val id: String = "",
@@ -258,3 +272,15 @@ data class CallInfo(
     val delivered: Boolean = false, // set by the other phone when it received the call (shows "Ringing")
     val createdAt: Long = 0L
 )
+
+
+/** True while the note is less than 24 hours old. */
+fun User.hasActiveNote(): Boolean =
+    note.isNotBlank() && noteAt > 0L && System.currentTimeMillis() - noteAt < 24L * 60L * 60L * 1000L
+
+/** Current streak: counts only if the last post was today or yesterday, otherwise the streak is broken (0). */
+fun User.activeStreak(): Int =
+    if (lastStreakDay == com.example.util.DailyChallenge.todayKey() ||
+        lastStreakDay == com.example.util.DailyChallenge.yesterdayKey()) streakCount else 0
+
+fun User.postedToday(): Boolean = lastStreakDay == com.example.util.DailyChallenge.todayKey()

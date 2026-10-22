@@ -109,6 +109,13 @@ service cloud.firestore {
       allow create: if isAuthenticated() && request.resource.data.authorId == request.auth.uid;
       allow update, delete: if isAuthenticated() && (resource.data.authorId == request.auth.uid || isAdmin());
 
+      // Story poll votes: one vote per person (doc id = voter id)
+      match /votes/{voterId} {
+        allow read: if isAuthenticated();
+        allow create, update: if isAuthenticated() && voterId == request.auth.uid;
+        allow delete: if isAdmin();
+      }
+
       // Story viewers: anyone signed in may record their OWN view; everyone signed in can read the list
       match /viewers/{viewerId} {
         allow read: if isAuthenticated();

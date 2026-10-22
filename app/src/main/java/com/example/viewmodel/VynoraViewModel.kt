@@ -1522,7 +1522,16 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
                                 caption, url, music, cloudinaryPublicId = publicId, visibility = visibility,
                                 hideLikes = "HIDE_LIKES" in flags, hideShares = "HIDE_SHARES" in flags, commentsOff = "NO_COMMENTS" in flags
                             )
-                            "MOMENT" -> publishMoment(caption, url, music, closeFriends, visibility)
+                            "MOMENT" -> {
+                                // poll travels inside flags as "POLL:question|optionA|optionB"
+                                val poll = flags.firstOrNull { it.startsWith("POLL:") }?.removePrefix("POLL:")?.split("|") ?: emptyList()
+                                publishMoment(
+                                    caption, url, music, closeFriends, visibility,
+                                    pollQuestion = poll.getOrElse(0) { "" },
+                                    pollOptionA = poll.getOrElse(1) { "" },
+                                    pollOptionB = poll.getOrElse(2) { "" }
+                                )
+                            }
                             else -> publishPost(
                                 caption, hashtags, listOf(url), location, filterName,
                                 cloudinaryPublicId = publicId,
@@ -1546,15 +1555,71 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
         job()
     }
 
+    // --- Posting streak: +1 for every day with a post, reel or story ---
+    private fun bumpStreak() {
+        val me = _uiState.value.currentUser ?: return
+        val today = com.example.util.DailyChallenge.todayKey()
+        if (me.lastStreakDay == today) return
+        val count = if (me.lastStreakDay == com.example.util.DailyChallenge.yesterdayKey()) me.streakCount + 1 else 1
+        _uiState.update { st -> st.copy(currentUser = st.currentUser?.copy(streakCount = count, lastStreakDay = today)) }
+        viewModelScope.launch { repository.setStreak(me.id, count, today) }
+        if (count > 1) showToast("🔥 $count day streak!")
+    }
+
+    // --- Profile note ---
+    fun saveNote(text: String, song: com.example.util.MusicTrack?) {
+        val me = _uiState.value.currentUser ?: return
+        val clean = text.trim().take(60)
+        viewModelScope.launch {
+            val ok = repository.setNote(me.id, clean, song?.label ?: "", song?.previewUrl ?: "")
+            if (ok) {
+                _uiState.update { st ->
+                    st.copy(
+                        currentUser = st.currentUser?.copy(
+                            note = clean,
+                            noteSong = if (clean.isBlank()) "" else song?.label ?: "",
+                            noteSongUrl = if (clean.isBlank()) "" else song?.previewUrl ?: "",
+                            noteAt = if (clean.isBlank()) 0L else System.currentTimeMillis()
+                        )
+                    )
+                }
+                showToast(if (clean.isBlank()) "Note removed" else "Note shared for 24 hours")
+            } else showToast("Could not save note")
+        }
+    }
+
     // --- Story viewers ---
     private val _momentViewers = MutableStateFlow<List<User>>(emptyList())
     val momentViewers: StateFlow<List<User>> = _momentViewers.asStateFlow()
     private var viewersJob: Job? = null
     private val viewedMomentIds = mutableSetOf<String>()
 
+    private val _pollVotes = MutableStateFlow(PollVotes())
+    val pollVotes: StateFlow<PollVotes> = _pollVotes.asStateFlow()
+    private var pollJob: Job? = null
+
+    fun voteMomentPoll(moment: Moment, option: Int) {
+        val me = _uiState.value.currentUser ?: return
+        // show the choice immediately, the live listener then confirms it
+        val cur = _pollVotes.value
+        _pollVotes.value = when {
+            cur.mine == option -> cur
+            option == 0 -> PollVotes(cur.a + 1, if (cur.mine == 1) cur.b - 1 else cur.b, 0)
+            else -> PollVotes(if (cur.mine == 0) cur.a - 1 else cur.a, cur.b + 1, 1)
+        }
+        viewModelScope.launch { repository.voteMomentPoll(moment.id, me.id, option) }
+    }
+
     /** Call when a story is shown. Saves a view for others' stories, or live-loads viewers for my own. */
     fun onMomentShown(moment: Moment) {
         val me = _uiState.value.currentUser ?: return
+        pollJob?.cancel()
+        _pollVotes.value = PollVotes()
+        if (moment.pollQuestion.isNotBlank()) {
+            pollJob = viewModelScope.launch {
+                repository.observeMomentPollVotes(moment.id, me.id).collect { _pollVotes.value = it }
+            }
+        }
         viewersJob?.cancel()
         _momentViewers.value = emptyList()
         if (moment.author.id == me.id) {
@@ -1566,8 +1631,18 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    fun publishMoment(textOverlay: String, mediaUrl: String, musicTrack: String?, isCloseFriends: Boolean, visibility: String = "PUBLIC") {
+    fun publishMoment(
+        textOverlay: String,
+        mediaUrl: String,
+        musicTrack: String?,
+        isCloseFriends: Boolean,
+        visibility: String = "PUBLIC",
+        pollQuestion: String = "",
+        pollOptionA: String = "",
+        pollOptionB: String = ""
+    ) {
         val user = _uiState.value.currentUser ?: return
+        bumpStreak()
         val (musicLabel, musicUrl) = com.example.util.MusicTrack.unpack(musicTrack)
         val newMoment = Moment(
             id = "m_${System.currentTimeMillis()}",
@@ -1576,6 +1651,9 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
             textOverlay = textOverlay,
             musicTrack = musicLabel.ifBlank { null },
             musicUrl = musicUrl,
+            pollQuestion = pollQuestion,
+            pollOptionA = pollOptionA,
+            pollOptionB = pollOptionB,
             timestamp = "Just now",
             isCloseFriendsOnly = isCloseFriends,
             viewersCount = 0,
@@ -1600,6 +1678,7 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
         visibility: String = "PUBLIC"
     ) {
         val user = _uiState.value.currentUser ?: return
+        bumpStreak()
 
         val newPost = Post(
             id = "p_${System.currentTimeMillis()}",
@@ -1644,6 +1723,7 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
         commentsOff: Boolean = false
     ) {
         val user = _uiState.value.currentUser ?: return
+        bumpStreak()
         // a song picked in the studio arrives as "Title • Artist" + preview url
         val (pickedLabel, pickedUrl) = com.example.util.MusicTrack.unpack(musicTitle)
         val labelParts = pickedLabel.split(" • ", limit = 2)

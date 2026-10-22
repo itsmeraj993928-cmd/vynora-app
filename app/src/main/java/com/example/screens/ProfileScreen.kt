@@ -22,6 +22,8 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
+import com.example.model.hasActiveNote
+import com.example.model.activeStreak
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -70,6 +72,7 @@ fun ProfileScreen(
     switchPasswordFor: com.example.model.SavedAccount? = null,
     onSubmitSwitchPassword: (String) -> Unit = {},
     onDismissSwitchPassword: () -> Unit = {},
+    onSaveNote: (text: String, song: com.example.util.MusicTrack?) -> Unit = { _, _ -> },
     isOwnProfile: Boolean = true,
     isFollowing: Boolean = false,
     onFollowClick: () -> Unit = {},
@@ -271,6 +274,41 @@ fun ProfileScreen(
                                 color = if (isDarkMode) Color(0xFFA855F7) else Color(0xFF7E22CE),
                                 fontWeight = FontWeight.Medium
                             )
+                        }
+                    }
+
+                    if (user.activeStreak() > 0) {
+                        Text(
+                            text = "🔥 ${user.activeStreak()} day streak",
+                            fontSize = 11.5.sp,
+                            color = Color(0xFFF59E0B),
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+
+                    // Note (24h) - tap to edit on my own profile
+                    run {
+                        var showNote by remember { mutableStateOf(false) }
+                        if (showNote) {
+                            NoteEditDialog(
+                                initialText = if (user.hasActiveNote()) user.note else "",
+                                initialSong = if (user.hasActiveNote()) user.noteSong else "",
+                                initialSongUrl = user.noteSongUrl,
+                                isDarkMode = isDarkMode,
+                                onSave = { t, sg -> onSaveNote(t, sg); showNote = false },
+                                onDismiss = { showNote = false }
+                            )
+                        }
+                        if (user.hasActiveNote()) {
+                            Spacer(modifier = Modifier.height(4.dp))
+                            NoteBubble(
+                                user.note, user.noteSong, isDarkMode,
+                                onClick = if (isOwnProfile) ({ showNote = true }) else null
+                            )
+                        } else if (isOwnProfile) {
+                            TextButton(onClick = { showNote = true }, contentPadding = PaddingValues(0.dp)) {
+                                Text("+ Add note", color = VynoraNeonCyan, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            }
                         }
                     }
 
