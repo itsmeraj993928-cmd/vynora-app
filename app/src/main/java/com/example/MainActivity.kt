@@ -113,6 +113,7 @@ fun VynoraApp(viewModel: VynoraViewModel) {
     val savedAccountsList by viewModel.savedAccounts.collectAsStateWithLifecycle()
     val switchPasswordFor by viewModel.switchPasswordFor.collectAsStateWithLifecycle()
     val momentViewers by viewModel.momentViewers.collectAsStateWithLifecycle()
+    val isRefreshing by viewModel.isRefreshing.collectAsStateWithLifecycle()
     var shareClip by remember { mutableStateOf<com.example.model.Clip?>(null) }
 
     // Handle Android system back press
@@ -232,11 +233,15 @@ fun VynoraApp(viewModel: VynoraViewModel) {
                                         onShareClick = { post -> viewModel.openShare(post) },
                                         onReportClick = { type, id, username -> viewModel.openReportDialog(type, id, username) },
                                         onAuthorClick = { username -> viewModel.openUserProfileByUsername(username) },
-                                        onFollowAuthor = { id, username -> viewModel.toggleFollowById(id, username) }
+                                        onFollowAuthor = { id, username -> viewModel.toggleFollowById(id, username) },
+                                        isRefreshing = isRefreshing,
+                                        onRefresh = { viewModel.refreshAll() }
                                     )
                                 }
                                 MainTab.EXPLORE -> {
                                     ExploreScreen(
+                                        isRefreshing = isRefreshing,
+                                        onRefresh = { viewModel.refreshAll() },
                                         posts = uiState.posts.filter { it.author.id != uiState.currentUser?.id },
                                         isDarkMode = uiState.isDarkMode,
                                         onUserClick = { username -> viewModel.openUserProfileByUsername(username) },
@@ -429,6 +434,8 @@ fun VynoraApp(viewModel: VynoraViewModel) {
                     onDispose { viewModel.markNotificationsSeen() }
                 }
                 NotificationsScreen(
+                    isRefreshing = isRefreshing,
+                    onRefresh = { viewModel.refreshAll() },
                     notifications = uiState.notifications,
                     isDarkMode = uiState.isDarkMode,
                     onMarkAllAsRead = { viewModel.markAllNotificationsRead() },

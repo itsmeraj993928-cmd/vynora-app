@@ -34,6 +34,7 @@ import com.example.ui.theme.VynoraNeonCyan
 import com.example.ui.theme.VynoraNeonPink
 import com.example.util.formatCount
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ExploreScreen(
     posts: List<Post>,
@@ -41,7 +42,9 @@ fun ExploreScreen(
     onUserClick: (String) -> Unit,
     onFollowToggle: (String) -> Unit,
     onPostClick: (Post) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    isRefreshing: Boolean = false,
+    onRefresh: () -> Unit = {}
 ) {
     var searchQuery by remember { mutableStateOf("") }
     var selectedCategory by remember { mutableStateOf("All") }
@@ -235,6 +238,11 @@ fun ExploreScreen(
                 }
             }
         } else {
+            PullToRefreshBox(
+                isRefreshing = isRefreshing,
+                onRefresh = onRefresh,
+                modifier = Modifier.fillMaxSize()
+            ) {
             LazyVerticalGrid(
                 columns = GridCells.Fixed(3),
                 modifier = Modifier
@@ -276,6 +284,7 @@ fun ExploreScreen(
                 }
             }
         }
+}
     }
 }
 }

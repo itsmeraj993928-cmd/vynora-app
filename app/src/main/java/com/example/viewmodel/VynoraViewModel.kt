@@ -270,6 +270,26 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    // --- Pull to refresh ---
+    private val _isRefreshing = MutableStateFlow(false)
+    val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
+
+    /** Pull down at the top of a list: reload feed, stories, follows and notifications. */
+    fun refreshAll() {
+        val uid = _uiState.value.currentUser?.id ?: return
+        if (_isRefreshing.value) return
+        _isRefreshing.value = true
+        viewModelScope.launch {
+            try {
+                startDataObservations(uid)
+                // let the first results arrive so the spinner does not vanish before the list updates
+                delay(1200)
+            } finally {
+                _isRefreshing.value = false
+            }
+        }
+    }
+
     // --- Saved accounts (switch account). Passwords are never stored. ---
     private val accountPrefs = application.getSharedPreferences("vynora_accounts", android.content.Context.MODE_PRIVATE)
     private val _savedAccounts = MutableStateFlow(loadSavedAccounts())

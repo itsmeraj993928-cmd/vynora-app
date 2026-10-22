@@ -41,6 +41,7 @@ import com.example.model.User
 import com.example.ui.theme.VynoraNeonCyan
 import com.example.ui.theme.VynoraNeonPink
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     posts: List<Post>,
@@ -63,7 +64,9 @@ fun HomeScreen(
     onAuthorClick: (String) -> Unit,
     modifier: Modifier = Modifier,
     onDeletePost: (String) -> Unit = {},
-    onFollowAuthor: (id: String, username: String) -> Unit = { _, _ -> }
+    onFollowAuthor: (id: String, username: String) -> Unit = { _, _ -> },
+    isRefreshing: Boolean = false,
+    onRefresh: () -> Unit = {}
 ) {
     var postToDelete by remember { mutableStateOf<String?>(null) }
     if (postToDelete != null) {
@@ -99,10 +102,14 @@ fun HomeScreen(
             )
         }
     ) { innerPadding ->
+        PullToRefreshBox(
+            isRefreshing = isRefreshing,
+            onRefresh = onRefresh,
+            modifier = Modifier.fillMaxSize().padding(innerPadding)
+        ) {
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding)
                 .testTag("home_feed_list"),
             contentPadding = PaddingValues(bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -263,6 +270,7 @@ fun HomeScreen(
                 }
             }
         }
+}
     }
 }
 
