@@ -18,11 +18,30 @@ object GeminiService {
         .writeTimeout(30, TimeUnit.SECONDS)
         .build()
 
-    private const val MODEL = "gemini-3.5-flash"
+    private val MODELS = listOf("gemini-2.5-flash", "gemini-flash-latest", "gemini-3.5-flash", "gemini-2.0-flash")
+
+    /** The real key, or "" when the build only has the placeholder. */
+    private fun key(): String {
+        val k = try { BuildConfig.GEMINI_API_KEY } catch (e: Exception) { "" }
+        return if (k.isBlank() || k.startsWith("MY_GEMINI")) "" else k
+    }
+
+    fun isConfigured(): Boolean = key().isNotBlank()
+
+    /** Looks at the photo and writes a caption. Returns null when AI isn't set up or fails. */
+    suspend fun captionFromImage(jpeg: ByteArray, hint: String = "", style: String = "trendy"): String? = withContext(Dispatchers.IO) {
+        val apiKey = key()
+        if (apiKey.isBlank()) return@withContext null
+        val prompt = "Look carefully at this photo and write a short, catchy Instagram-style caption (max 2 lines) " +
+                "that matches what is really in the picture, with 2-4 fitting emojis. Style: $style. " +
+                (if (hint.isNotBlank()) "The user already wrote: '$hint' - keep that idea. " else "") +
+                "No hashtags. Return only the caption text."
+        callGeminiApi(prompt, apiKey, android.util.Base64.encodeToString(jpeg, android.util.Base64.NO_WRAP))
+    }
     private const val BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
 
     suspend fun generateCaption(topicOrImageDesc: String, style: String = "trendy"): String = withContext(Dispatchers.IO) {
-        val apiKey = try { BuildConfig.GEMINI_API_KEY } catch (e: Exception) { "" }
+        val apiKey = key()
         if (apiKey.isBlank()) {
             return@withContext fallbackCaption(topicOrImageDesc, style)
         }
@@ -35,7 +54,7 @@ object GeminiService {
     }
 
     suspend fun generateHashtags(topic: String): List<String> = withContext(Dispatchers.IO) {
-        val apiKey = try { BuildConfig.GEMINI_API_KEY } catch (e: Exception) { "" }
+        val apiKey = key()
         if (apiKey.isBlank()) {
             return@withContext fallbackHashtags(topic)
         }
@@ -52,7 +71,7 @@ object GeminiService {
     }
 
     suspend fun translateText(text: String, targetLanguage: String): String = withContext(Dispatchers.IO) {
-        val apiKey = try { BuildConfig.GEMINI_API_KEY } catch (e: Exception) { "" }
+        val apiKey = key()
         if (apiKey.isBlank()) {
             return@withContext fallbackTranslation(text, targetLanguage)
         }
@@ -63,41 +82,36 @@ object GeminiService {
         callGeminiApi(prompt, apiKey) ?: fallbackTranslation(text, targetLanguage)
     }
 
-    private fun callGeminiApi(promptText: String, apiKey: String): String? {
-        return try {
-            val url = "$BASE_URL/$MODEL:generateContent?key=$apiKey"
-            val jsonBody = JSONObject().apply {
-                val contents = JSONArray().apply {
-                    put(JSONObject().apply {
-                        put("parts", JSONArray().apply {
-                            put(JSONObject().apply {
-                                put("text", promptText)
-                            })
-                        })
-                    })
-                }
-                put("contents", contents)
-            }
+    private fun callGeminiApi(promptText: String, apiKey: String, imageB64: String? = null): String? {
+        for (model in MODELS) {
+            val r = callModel(model, promptText, apiKey, imageB64)
+            if (!r.isNullOrBlank()) return r
+        }
+        return null
+    }
 
+    private fun callModel(model: String, promptText: String, apiKey: String, imageB64: String?): String? {
+        return try {
+            val url = "$BASE_URL/$model:generateContent?key=$apiKey"
+            val parts = JSONArray()
+            if (imageB64 != null) {
+                parts.put(JSONObject().put("inline_data", JSONObject().put("mime_type", "image/jpeg").put("data", imageB64)))
+            }
+            parts.put(JSONObject().put("text", promptText))
+            val jsonBody = JSONObject().put("contents", JSONArray().put(JSONObject().put("parts", parts)))
             val request = Request.Builder()
                 .url(url)
                 .post(jsonBody.toString().toRequestBody("application/json".toMediaType()))
                 .build()
-
-            val response = client.newCall(request).execute()
-            if (!response.isSuccessful) return null
-
-            val responseString = response.body?.string() ?: return null
-            val root = JSONObject(responseString)
-            val candidates = root.optJSONArray("candidates") ?: return null
-            if (candidates.length() == 0) return null
-
-            val firstCandidate = candidates.getJSONObject(0)
-            val content = firstCandidate.optJSONObject("content") ?: return null
-            val parts = content.optJSONArray("parts") ?: return null
-            if (parts.length() == 0) return null
-
-            parts.getJSONObject(0).optString("text").trim()
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return null
+                val responseString = response.body?.string() ?: return null
+                val candidates = JSONObject(responseString).optJSONArray("candidates") ?: return null
+                if (candidates.length() == 0) return null
+                val p = candidates.getJSONObject(0).optJSONObject("content")?.optJSONArray("parts") ?: return null
+                if (p.length() == 0) return null
+                p.getJSONObject(0).optString("text").trim()
+            }
         } catch (e: Exception) {
             null
         }

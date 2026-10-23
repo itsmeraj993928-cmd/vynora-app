@@ -454,6 +454,11 @@ private fun ClipItemView(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
+                StoryRingAvatar(
+                    avatarUrl = clip.author.avatarUrl,
+                    size = 32.dp,
+                    onClick = onUserClick
+                )
                 Text(
                     text = "@${clip.author.username}",
                     fontWeight = FontWeight.Bold,

@@ -21,6 +21,11 @@ jobs:
             -storepass android -alias androiddebugkey -keypass android \
             -keyalg RSA -keysize 2048 -validity 10000 \
             -dname "CN=Android Debug,O=Android,C=US"
+      - name: Add Gemini key (from GitHub secret, if set)
+        env:
+          GEMINI_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          if [ -n "$GEMINI_KEY" ]; then echo "GEMINI_API_KEY=$GEMINI_KEY" > .env; fi
       - name: Build debug APK
         run: |
           echo "org.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=1g" >> gradle.properties

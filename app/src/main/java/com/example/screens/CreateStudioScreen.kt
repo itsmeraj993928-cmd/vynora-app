@@ -49,6 +49,7 @@ import com.example.i18n.AppLanguage
 import com.example.ui.theme.VynoraNeonCyan
 import com.example.ui.theme.VynoraNeonPink
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 enum class CreateMode {
@@ -110,7 +111,18 @@ private fun loadGalleryThumb(ctx: Context, uri: Uri, isVideo: Boolean, px: Int):
             if (isVideo) MediaStore.Video.Thumbnails.getThumbnail(ctx.contentResolver, id, MediaStore.Video.Thumbnails.MINI_KIND, null)
             else MediaStore.Images.Thumbnails.getThumbnail(ctx.contentResolver, id, MediaStore.Images.Thumbnails.MINI_KIND, null)
         }
-    } catch (e: Exception) { null }
+    } catch (e: Exception) {
+        // camera / collage files are not in the media library: decode them directly
+        try {
+            if (isVideo) {
+                val r = android.media.MediaMetadataRetriever()
+                r.setDataSource(ctx, uri)
+                val f = r.getFrameAtTime(0L)
+                r.release()
+                f
+            } else decodeScaled(ctx, uri, px)
+        } catch (e2: Exception) { null }
+    }
 }
 
 private fun fmtDuration(ms: Long): String {
@@ -119,7 +131,7 @@ private fun fmtDuration(ms: Long): String {
 }
 
 @Composable
-private fun GalleryThumb(uri: Uri, isVideo: Boolean, modifier: Modifier = Modifier, px: Int = 320) {
+private fun GalleryThumb(uri: Uri, isVideo: Boolean, modifier: Modifier = Modifier, px: Int = 320, colorFilter: androidx.compose.ui.graphics.ColorFilter? = null) {
     val ctx = LocalContext.current
     val bmp by produceState<Bitmap?>(initialValue = null, uri) {
         value = withContext(Dispatchers.IO) { loadGalleryThumb(ctx, uri, isVideo, px) }
@@ -131,7 +143,8 @@ private fun GalleryThumb(uri: Uri, isVideo: Boolean, modifier: Modifier = Modifi
                 bitmap = b.asImageBitmap(),
                 contentDescription = null,
                 modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop
+                contentScale = ContentScale.Crop,
+                colorFilter = colorFilter
             )
         }
     }
@@ -147,6 +160,7 @@ fun CreateStudioScreen(
     onStartBackgroundUpload: (kind: String, uri: Uri, caption: String, hashtags: List<String>, location: String?, filter: String?, visibility: String, music: String, closeFriends: Boolean, flags: Set<String>) -> Unit = { _, _, _, _, _, _, _, _, _, _ -> },
     onRequestAiCaption: (topic: String, onResult: (String) -> Unit) -> Unit,
     onRequestAiHashtags: (topic: String, onResult: (List<String>) -> Unit) -> Unit,
+    onRequestAiImageCaption: (jpeg: ByteArray, hint: String, onResult: (String?) -> Unit) -> Unit = { _, _, r -> r(null) },
     onToast: (String) -> Unit,
     onClose: () -> Unit = {},
     modifier: Modifier = Modifier
@@ -172,6 +186,9 @@ fun CreateStudioScreen(
     var pollA by remember { mutableStateOf("Yes") }
     var pollB by remember { mutableStateOf("No") }
     var showPollDialog by remember { mutableStateOf(false) }
+    var showTextStory by remember { mutableStateOf(false) }
+    var aiBusy by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
 
     var picked by remember { mutableStateOf<GalleryItem?>(null) }
     var pickedSizeMb by remember { mutableStateOf(0f) }
@@ -242,6 +259,31 @@ fun CreateStudioScreen(
         browseLauncher.launch(PickVisualMediaRequest(t))
     }
 
+    var cameraTarget by remember { mutableStateOf<Uri?>(null) }
+    val photoLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
+        val u = cameraTarget
+        if (ok && u != null) pickItem(u, false, 0L)
+    }
+    val videoLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CaptureVideo()) { ok ->
+        val u = cameraTarget
+        if (ok && u != null) pickItem(u, true, 0L)
+    }
+    val collageLauncher = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(4)) { uris: List<Uri> ->
+        if (uris.size < 2) { if (uris.isNotEmpty()) onToast("Pick at least 2 photos for a layout") }
+        else scope.launch {
+            val out = withContext(Dispatchers.IO) { buildCollage(context, uris) }
+            if (out != null) pickItem(out, false, 0L) else onToast("Couldn't build the layout")
+        }
+    }
+    fun openCamera() {
+        try {
+            val video = mode == CreateMode.CLIP
+            val t = newCameraTarget(context, video)
+            cameraTarget = t
+            if (video) videoLauncher.launch(t) else photoLauncher.launch(t)
+        } catch (e: Exception) { onToast("Camera isn't available on this phone") }
+    }
+
     val title = when (mode) { CreateMode.CLIP -> "New reel"; CreateMode.MOMENT -> "New story"; else -> "New post" }
 
     if (showPollDialog) {
@@ -273,6 +315,54 @@ fun CreateStudioScreen(
             isDarkMode = isDarkMode,
             onPick = { selectedSong = it; showMusicPicker = false },
             onDismiss = { showMusicPicker = false }
+        )
+    }
+
+    if (showTextStory) {
+        var txt by remember { mutableStateOf("") }
+        var theme by remember { mutableStateOf(0) }
+        AlertDialog(
+            onDismissRequest = { showTextStory = false },
+            title = { Text("Aa Create") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    val (c1, c2) = TextStoryThemes[theme]
+                    Box(
+                        modifier = Modifier.fillMaxWidth().height(150.dp).clip(RoundedCornerShape(14.dp))
+                            .background(androidx.compose.ui.graphics.Brush.linearGradient(listOf(Color(c1), Color(c2)))),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            if (txt.isBlank()) "Type something…" else txt,
+                            color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                            modifier = Modifier.padding(12.dp)
+                        )
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TextStoryThemes.forEachIndexed { i, (a, b) ->
+                            Box(
+                                modifier = Modifier.size(32.dp).clip(CircleShape)
+                                    .background(androidx.compose.ui.graphics.Brush.linearGradient(listOf(Color(a), Color(b))))
+                                    .border(if (i == theme) 2.dp else 0.dp, Color.White, CircleShape)
+                                    .clickable { theme = i }
+                            )
+                        }
+                    }
+                    OutlinedTextField(value = txt, onValueChange = { txt = it.take(200) }, label = { Text("Your text") }, modifier = Modifier.fillMaxWidth())
+                }
+            },
+            confirmButton = {
+                TextButton(enabled = txt.isNotBlank(), onClick = {
+                    showTextStory = false
+                    val t = txt.trim(); val th = theme
+                    scope.launch {
+                        val out = withContext(Dispatchers.IO) { renderTextStory(context, t, th) }
+                        if (out != null) pickItem(out, false, 0L) else onToast("Couldn't create the card")
+                    }
+                }) { Text("Next", color = VynoraNeonPink) }
+            },
+            dismissButton = { TextButton(onClick = { showTextStory = false }) { Text("Cancel") } }
         )
     }
 
@@ -308,6 +398,31 @@ fun CreateStudioScreen(
                         ) {
                             Icon(Icons.Outlined.FolderOpen, contentDescription = null, tint = fg, modifier = Modifier.size(18.dp))
                             Text("Browse", color = fg, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    @Composable
+                    fun Tool(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector, onClick: () -> Unit) {
+                        Surface(shape = RoundedCornerShape(20.dp), color = cardBg, modifier = Modifier.clickable(onClick = onClick)) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Icon(icon, contentDescription = null, tint = VynoraNeonCyan, modifier = Modifier.size(18.dp))
+                                Text(label, color = fg, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+                    }
+                    Tool("Camera", Icons.Outlined.PhotoCamera) { openCamera() }
+                    if (mode != CreateMode.CLIP) {
+                        Tool("Aa Create", Icons.Outlined.TextFields) { showTextStory = true }
+                        Tool("Layout", Icons.Outlined.GridView) {
+                            collageLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
                         }
                     }
                 }
@@ -389,14 +504,12 @@ fun CreateStudioScreen(
                                     .height(if (mode == CreateMode.CLIP) 160.dp else 130.dp)
                                     .clip(RoundedCornerShape(14.dp))
                             ) {
-                                GalleryThumb(p.uri, p.isVideo, Modifier.fillMaxSize(), px = 480)
-                                when (selectedFilter) {
-                                    "Neon Glow" -> Box(Modifier.fillMaxSize().background(VynoraNeonCyan.copy(alpha = 0.18f)))
-                                    "Cyberpunk" -> Box(Modifier.fillMaxSize().background(VynoraNeonPink.copy(alpha = 0.18f)))
-                                    "Sunset Warm" -> Box(Modifier.fillMaxSize().background(Color(0xFFF59E0B).copy(alpha = 0.2f)))
-                                    "Noir" -> Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.35f)))
-                                    "Vibrant" -> Box(Modifier.fillMaxSize().background(Color(0xFFA855F7).copy(alpha = 0.15f)))
-                                }
+                                GalleryThumb(
+                                    p.uri, p.isVideo, Modifier.fillMaxSize(), px = 480,
+                                    colorFilter = StudioFilters.matrix(selectedFilter)?.let {
+                                        androidx.compose.ui.graphics.ColorFilter.colorMatrix(androidx.compose.ui.graphics.ColorMatrix(it))
+                                    }
+                                )
                                 val info = buildString {
                                     if (p.isVideo && p.durationMs > 0) append(fmtDuration(p.durationMs))
                                     if (pickedSizeMb > 0f) { if (isNotEmpty()) append(" • "); append(String.format("%.1f MB", pickedSizeMb)) }
@@ -429,20 +542,36 @@ fun CreateStudioScreen(
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         AssistChip(onClick = { caption = if (caption.isEmpty() || caption.endsWith(" ")) "$caption#" else "$caption #" }, label = { Text("# Hashtags", fontSize = 12.sp) })
                         AssistChip(onClick = {
-                            if (caption.isBlank()) onToast("Write a few words first, then AI can improve it")
+                            val pk = picked
+                            if (aiBusy) return@AssistChip
+                            if (pk != null) {
+                                aiBusy = true
+                                onToast("AI is looking at your photo…")
+                                scope.launch {
+                                    val jpeg = withContext(Dispatchers.IO) { jpegForAi(context, pk.uri, pk.isVideo) }
+                                    if (jpeg == null) {
+                                        aiBusy = false
+                                        onToast("Couldn't read this photo for AI")
+                                    } else onRequestAiImageCaption(jpeg, caption) { r ->
+                                        aiBusy = false
+                                        if (r.isNullOrBlank()) onToast("AI is not set up yet (Gemini key missing). Add GEMINI_API_KEY secret and rebuild.")
+                                        else caption = r
+                                    }
+                                }
+                            } else if (caption.isBlank()) onToast("Pick a photo first, then AI can write a caption")
                             else onRequestAiCaption(caption) { r -> if (r.isNotBlank()) caption = r }
-                        }, label = { Text("AI Caption", fontSize = 12.sp) })
+                        }, label = { Text(if (aiBusy) "AI…" else "AI Caption", fontSize = 12.sp) })
                         AssistChip(onClick = {
                             if (caption.isBlank()) onToast("Write a few words first, then AI can suggest tags")
                             else onRequestAiHashtags(caption) { tags -> if (tags.isNotEmpty()) caption = caption.trimEnd() + "\n" + tags.joinToString(" ") }
                         }, label = { Text("AI Tags", fontSize = 12.sp) })
                     }
 
-                    if (mode == CreateMode.POST) {
+                    if (mode != CreateMode.CLIP && picked?.isVideo != true) {
                         Spacer(modifier = Modifier.height(14.dp))
                         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            items(listOf("Original", "Neon Glow", "Cyberpunk", "Sunset Warm", "Noir", "Vibrant").size) { i ->
-                                val f = listOf("Original", "Neon Glow", "Cyberpunk", "Sunset Warm", "Noir", "Vibrant")[i]
+                            items(StudioFilters.names.size) { i ->
+                                val f = StudioFilters.names[i]
                                 FilterChip(
                                     selected = selectedFilter == f,
                                     onClick = { selectedFilter = f },
@@ -538,8 +667,10 @@ fun CreateStudioScreen(
                                 add("POLL:" + pollQ.trim().replace("|", " ") + "|" + pollA.trim().replace("|", " ") + "|" + pollB.trim().replace("|", " "))
                             }
                         }
+                        val uploadUri = if (!p.isVideo && mode != CreateMode.CLIP && selectedFilter != "Original")
+                            (bakeFilter(context, p.uri, selectedFilter) ?: p.uri) else p.uri
                         onStartBackgroundUpload(
-                            kindName, p.uri, finalCaption, finalTags, location.ifBlank { null },
+                            kindName, uploadUri, finalCaption, finalTags, location.ifBlank { null },
                             selectedFilter, visibility,
                             if (mode == CreateMode.MOMENT || mode == CreateMode.CLIP) (selectedSong?.pack() ?: "Original audio") else "Original audio",
                             isCloseFriends, flags

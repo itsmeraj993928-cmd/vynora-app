@@ -1880,6 +1880,16 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    /** Photo -> caption. onResult(null) means AI isn't set up / failed. */
+    fun requestAiImageCaption(jpeg: ByteArray, hint: String, onResult: (String?) -> Unit) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isAiGenerating = true) }
+            val caption = GeminiService.captionFromImage(jpeg, hint)
+            _uiState.update { it.copy(isAiGenerating = false) }
+            onResult(caption)
+        }
+    }
+
     fun requestAiHashtags(topic: String, onResult: (List<String>) -> Unit) {
         viewModelScope.launch {
             _uiState.update { it.copy(isAiGenerating = true) }
