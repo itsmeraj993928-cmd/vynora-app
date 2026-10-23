@@ -23,6 +23,11 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -66,13 +71,16 @@ import java.io.File
 @SuppressLint("MissingPermission")
 @Composable
 internal fun CameraCaptureScreen(
-    videoMode: Boolean,
-    onCaptured: (Uri, Boolean) -> Unit,
+    initialMode: CreateMode,
+    onCaptured: (Uri, Boolean, CreateMode, String) -> Unit,
     onClose: () -> Unit,
     onFail: (String) -> Unit
 ) {
     val ctx = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
+    var camMode by remember { mutableStateOf(initialMode) }
+    val videoMode = camMode == CreateMode.CLIP
+    var filterName by remember { mutableStateOf("Original") }
     var useFront by remember { mutableStateOf(false) }
     var flashOn by remember { mutableStateOf(false) }
     var recording by remember { mutableStateOf<Recording?>(null) }
@@ -85,9 +93,19 @@ internal fun CameraCaptureScreen(
             .build()
     }
     val videoCapture = remember { VideoCapture.withOutput(recorder) }
-    val previewView = remember { PreviewView(ctx).apply { scaleType = PreviewView.ScaleType.FILL_CENTER } }
+    val previewView = remember { PreviewView(ctx).apply { implementationMode = PreviewView.ImplementationMode.COMPATIBLE; scaleType = PreviewView.ScaleType.FILL_CENTER } }
 
-    DisposableEffect(useFront) {
+    // live filter preview: tint the whole preview layer with the chosen colour matrix
+    LaunchedEffect(filterName, videoMode) {
+        val m = if (videoMode) null else StudioFilters.matrix(filterName)
+        if (m == null) previewView.setLayerType(android.view.View.LAYER_TYPE_NONE, null)
+        else previewView.setLayerType(
+            android.view.View.LAYER_TYPE_HARDWARE,
+            android.graphics.Paint().apply { colorFilter = android.graphics.ColorMatrixColorFilter(android.graphics.ColorMatrix(m)) }
+        )
+    }
+
+    DisposableEffect(useFront, videoMode) {
         val future = ProcessCameraProvider.getInstance(ctx)
         future.addListener({
             try {
@@ -126,7 +144,7 @@ internal fun CameraCaptureScreen(
             ImageCapture.OutputFileOptions.Builder(f).build(),
             ContextCompat.getMainExecutor(ctx),
             object : ImageCapture.OnImageSavedCallback {
-                override fun onImageSaved(output: ImageCapture.OutputFileResults) { onCaptured(cacheFileUri(ctx, f), false) }
+                override fun onImageSaved(output: ImageCapture.OutputFileResults) { onCaptured(cacheFileUri(ctx, f), false, camMode, filterName) }
                 override fun onError(exception: ImageCaptureException) { onFail("Couldn't take the photo") }
             }
         )
@@ -143,7 +161,7 @@ internal fun CameraCaptureScreen(
         recording = pending.start(ContextCompat.getMainExecutor(ctx)) { ev ->
             if (ev is VideoRecordEvent.Finalize) {
                 recording = null
-                if (!ev.hasError()) onCaptured(cacheFileUri(ctx, f), true) else onFail("Recording failed")
+                if (!ev.hasError()) onCaptured(cacheFileUri(ctx, f), true, camMode, "Original") else onFail("Recording failed")
             }
         }
     }
@@ -180,24 +198,60 @@ internal fun CameraCaptureScreen(
                 } else Box(modifier = Modifier.size(48.dp))
             }
 
-            Box(
-                modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().navigationBarsPadding().padding(bottom = 36.dp)
+            Column(
+                modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().navigationBarsPadding().padding(bottom = 16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.Center)
-                        .size(82.dp)
-                        .border(4.dp, Color.White, CircleShape)
-                        .padding(7.dp)
-                        .clip(CircleShape)
-                        .background(if (recording != null) Color(0xFFE11D48) else Color.White)
-                        .clickable { if (videoMode) toggleRecording() else takePhoto() }
-                )
-                IconButton(
-                    onClick = { useFront = !useFront },
-                    modifier = Modifier.align(Alignment.CenterEnd).padding(end = 36.dp).size(52.dp)
-                ) {
-                    Icon(Icons.Filled.Cameraswitch, contentDescription = "Flip", tint = Color.White, modifier = Modifier.size(32.dp))
+                if (!videoMode) {
+                    LazyRow(
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp),
+                        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp)
+                    ) {
+                        items(StudioFilters.names.size) { i ->
+                            val n = StudioFilters.names[i]
+                            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.clickable { filterName = n }) {
+                                Box(
+                                    modifier = Modifier.size(44.dp).clip(CircleShape)
+                                        .background(androidx.compose.ui.graphics.Brush.linearGradient(TextStoryThemes[i % TextStoryThemes.size].let { listOf(Color(it.first), Color(it.second)) }))
+                                        .border(if (n == filterName) 2.dp else 0.dp, Color.White, CircleShape),
+                                    contentAlignment = Alignment.Center
+                                ) { Text(n.take(1), color = Color.White, fontSize = 16.sp) }
+                                Text(n, color = if (n == filterName) Color.White else Color(0xAAFFFFFF), fontSize = 10.sp, maxLines = 1)
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(14.dp))
+                }
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .size(82.dp)
+                            .border(4.dp, Color.White, CircleShape)
+                            .padding(7.dp)
+                            .clip(CircleShape)
+                            .background(if (recording != null) Color(0xFFE11D48) else Color.White)
+                            .clickable { if (videoMode) toggleRecording() else takePhoto() }
+                    )
+                    IconButton(
+                        onClick = { useFront = !useFront },
+                        modifier = Modifier.align(Alignment.CenterEnd).padding(end = 36.dp).size(52.dp)
+                    ) {
+                        Icon(Icons.Filled.Cameraswitch, contentDescription = "Flip", tint = Color.White, modifier = Modifier.size(32.dp))
+                    }
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+                Row(horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(28.dp)) {
+                    listOf(CreateMode.POST to "POST", CreateMode.MOMENT to "STORY", CreateMode.CLIP to "REEL").forEach { (m, label) ->
+                        Text(
+                            label,
+                            color = if (camMode == m) Color.White else Color(0x99FFFFFF),
+                            fontSize = 15.sp,
+                            fontWeight = if (camMode == m) androidx.compose.ui.text.font.FontWeight.Bold else androidx.compose.ui.text.font.FontWeight.Normal,
+                            letterSpacing = 2.sp,
+                            modifier = Modifier.clickable(enabled = recording == null) { camMode = m }
+                        )
+                    }
                 }
             }
         }
