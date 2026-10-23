@@ -259,14 +259,11 @@ fun CreateStudioScreen(
         browseLauncher.launch(PickVisualMediaRequest(t))
     }
 
-    var cameraTarget by remember { mutableStateOf<Uri?>(null) }
-    val photoLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
-        val u = cameraTarget
-        if (ok && u != null) pickItem(u, false, 0L)
-    }
-    val videoLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CaptureVideo()) { ok ->
-        val u = cameraTarget
-        if (ok && u != null) pickItem(u, true, 0L)
+    var showCamera by remember { mutableStateOf(false) }
+    val camPermLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { res ->
+        if (res[Manifest.permission.CAMERA] == true ||
+            ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) showCamera = true
+        else onToast("Allow camera permission to use the camera")
     }
     val collageLauncher = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(4)) { uris: List<Uri> ->
         if (uris.size < 2) { if (uris.isNotEmpty()) onToast("Pick at least 2 photos for a layout") }
@@ -276,12 +273,11 @@ fun CreateStudioScreen(
         }
     }
     fun openCamera() {
-        try {
-            val video = mode == CreateMode.CLIP
-            val t = newCameraTarget(context, video)
-            cameraTarget = t
-            if (video) videoLauncher.launch(t) else photoLauncher.launch(t)
-        } catch (e: Exception) { onToast("Camera isn't available on this phone") }
+        val need = buildList {
+            if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) add(Manifest.permission.CAMERA)
+            if (mode == CreateMode.CLIP && ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) add(Manifest.permission.RECORD_AUDIO)
+        }
+        if (need.isEmpty()) showCamera = true else camPermLauncher.launch(need.toTypedArray())
     }
 
     val title = when (mode) { CreateMode.CLIP -> "New reel"; CreateMode.MOMENT -> "New story"; else -> "New post" }
@@ -315,6 +311,15 @@ fun CreateStudioScreen(
             isDarkMode = isDarkMode,
             onPick = { selectedSong = it; showMusicPicker = false },
             onDismiss = { showMusicPicker = false }
+        )
+    }
+
+    if (showCamera) {
+        CameraCaptureScreen(
+            videoMode = mode == CreateMode.CLIP,
+            onCaptured = { u, isVid -> showCamera = false; pickItem(u, isVid, 0L) },
+            onClose = { showCamera = false },
+            onFail = { m -> showCamera = false; onToast(m) }
         )
     }
 
