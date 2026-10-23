@@ -273,6 +273,9 @@ fun VynoraApp(viewModel: VynoraViewModel) {
                                         onRequestAiCaption = { topic, onResult ->
                                             viewModel.requestAiCaption(topic, onResult)
                                         },
+                                        onRequestAiImageCaption = { jpeg, hint, onResult ->
+                                            viewModel.requestAiImageCaption(jpeg, hint, onResult)
+                                        },
                                         onRequestAiHashtags = { topic, onResult ->
                                             viewModel.requestAiHashtags(topic, onResult)
                                         },

@@ -463,6 +463,23 @@ class VynoraRepository(
                 }
                 val clips = snapshot?.toObjects(Clip::class.java) ?: emptyList()
                 trySend(clips)
+                // reel docs may carry an old/empty copy of the creator's photo: fetch the real one
+                launch {
+                    val enriched = clips.map { c ->
+                        if (c.author.id.isBlank()) c
+                        else {
+                            val full = loadUserCached(c.author.id)
+                            c.copy(
+                                author = c.author.copy(
+                                    username = full.username.ifBlank { c.author.username },
+                                    fullName = full.fullName.ifBlank { c.author.fullName },
+                                    avatarUrl = full.avatarUrl.ifBlank { c.author.avatarUrl }
+                                )
+                            )
+                        }
+                    }
+                    trySend(enriched)
+                }
             }
         awaitClose { listener.remove() }
     }
