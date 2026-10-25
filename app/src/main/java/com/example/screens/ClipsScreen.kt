@@ -473,7 +473,7 @@ private fun ClipItemView(
                     VynoraPlusBadge(size = 15.dp)
                 }
 
-                if (!isOwner) Surface(
+                if (!isOwner && !clip.isFollowing) Surface(
                     shape = RoundedCornerShape(12.dp),
                     color = if (clip.isFollowing) Color.White.copy(alpha = 0.2f) else VynoraNeonPink,
                     modifier = Modifier.clickable(onClick = onFollowToggle)

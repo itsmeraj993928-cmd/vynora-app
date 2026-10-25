@@ -216,6 +216,8 @@ fun VynoraApp(viewModel: VynoraViewModel) {
                                 MainTab.HOME -> {
                                     HomeScreen(
                                         posts = uiState.posts,
+                                        clips = uiState.clips,
+                                        onOpenClips = { viewModel.selectTab(MainTab.CLIPS) },
                                         moments = uiState.moments,
                                         currentUser = uiState.currentUser ?: com.example.model.User(),
                                         unreadNotificationsCount = uiState.notifications.count { !it.isRead },
@@ -296,6 +298,16 @@ fun VynoraApp(viewModel: VynoraViewModel) {
                                         onToast = { msg -> viewModel.showToast(msg) },
                                         onReport = { id, uname -> viewModel.openReportDialog("Clip", id, uname) },
                                         onCreateClick = { viewModel.selectTab(MainTab.CREATE) }
+                                    )
+                                }
+                                MainTab.AI -> {
+                                    com.example.screens.AiVideoScreen(
+                                        isDarkMode = uiState.isDarkMode,
+                                        onPostAsReel = { uri, cap ->
+                                            viewModel.startBackgroundUpload("CLIP", uri, cap, emptyList(), null, null, "PUBLIC", "Original audio", false, emptySet())
+                                            viewModel.selectTab(MainTab.CLIPS)
+                                        },
+                                        onToast = { msg -> viewModel.showToast(msg) }
                                     )
                                 }
                                 MainTab.PROFILE -> {

@@ -53,7 +53,7 @@ sealed class ScreenDestination {
 }
 
 enum class MainTab {
-    HOME, EXPLORE, CREATE, CLIPS, PROFILE
+    HOME, EXPLORE, CREATE, CLIPS, AI, PROFILE
 }
 
 data class VynoraUiState(

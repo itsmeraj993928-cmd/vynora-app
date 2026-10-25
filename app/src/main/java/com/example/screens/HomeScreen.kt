@@ -13,6 +13,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Notifications
@@ -49,6 +50,8 @@ import com.example.ui.theme.VynoraNeonPink
 @Composable
 fun HomeScreen(
     posts: List<Post>,
+    clips: List<com.example.model.Clip> = emptyList(),
+    onOpenClips: () -> Unit = {},
     moments: List<Moment>,
     currentUser: User,
     unreadNotificationsCount: Int,
@@ -118,6 +121,10 @@ fun HomeScreen(
             )
         }
     ) { innerPadding ->
+    val feed = remember(posts, clips) {
+        (posts.map { FeedItem.P(it) as FeedItem } + clips.map { FeedItem.C(it) })
+            .sortedByDescending { it.createdAt }
+    }
         PullToRefreshBox(
             isRefreshing = isRefreshing,
             onRefresh = onRefresh,
@@ -153,7 +160,7 @@ fun HomeScreen(
             }
 
             // --- 2. Posts Feed ---
-            if (posts.isEmpty()) {
+            if (feed.isEmpty()) {
                 item {
                     Card(
                         modifier = Modifier
@@ -253,7 +260,21 @@ fun HomeScreen(
                     }
                 }
             } else {
-                items(posts, key = { it.id }) { post ->
+                items(feed, key = { it.key }) { item ->
+                    if (item is FeedItem.C) {
+                        val clip = item.clip
+                        ReelFeedCard(
+                            clip = clip,
+                            isDarkMode = isDarkMode,
+                            isOwner = currentUser.id.isNotBlank() && clip.author.id == currentUser.id,
+                            onOpen = onOpenClips,
+                            onAuthorClick = { onAuthorClick(clip.author.username) },
+                            onFollow = { onFollowAuthor(clip.author.id, clip.author.username) },
+                            modifier = Modifier.padding(horizontal = 14.dp)
+                        )
+                        return@items
+                    }
+                    val post = (item as FeedItem.P).post
                     Column {
                         Box {
                         PostCard(
@@ -270,7 +291,7 @@ fun HomeScreen(
                             onAuthorClick = { onAuthorClick(post.author.username) },
                             modifier = Modifier.padding(horizontal = 14.dp)
                         )
-                        if (post.author.id.isNotBlank() && post.author.id != currentUser.id && !post.author.isOfficial) {
+                        if (post.author.id.isNotBlank() && post.author.id != currentUser.id && !post.author.isOfficial && !post.author.isFollowing) {
                             val following = post.author.isFollowing
                             Surface(
                                 shape = RoundedCornerShape(10.dp),
@@ -571,5 +592,73 @@ private fun DailyChallengeCard(user: User, isDarkMode: Boolean, onPostNow: () ->
                 ) { Text("Post", color = Color.White, fontSize = 13.sp) }
             }
         }
+    }
+}
+
+
+private sealed class FeedItem(val key: String, val createdAt: Long) {
+    class P(val post: Post) : FeedItem("p_" + post.id, post.createdAt)
+    class C(val clip: com.example.model.Clip) : FeedItem("c_" + clip.id, clip.createdAt)
+}
+
+/** A reel shown inside the home feed. Tap opens the Clips tab. */
+@Composable
+private fun ReelFeedCard(
+    clip: com.example.model.Clip,
+    isDarkMode: Boolean,
+    isOwner: Boolean,
+    onOpen: () -> Unit,
+    onAuthorClick: () -> Unit,
+    onFollow: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val fg = if (isDarkMode) Color.White else Color(0xFF0F172A)
+    val card = if (isDarkMode) Color(0xFF0F121E) else Color.White
+    val thumb = remember(clip.mediaUrl) {
+        val u = clip.mediaUrl
+        if (u.contains("/video/upload/") && u.contains(".")) u.substringBeforeLast('.') + ".jpg" else ""
+    }
+    Column(
+        modifier = modifier.fillMaxWidth().padding(vertical = 8.dp).clip(RoundedCornerShape(20.dp)).background(card)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            StoryRingAvatar(avatarUrl = clip.author.avatarUrl, size = 40.dp, onClick = onAuthorClick)
+            Text(clip.author.username, color = fg, fontWeight = FontWeight.Bold, fontSize = 15.sp, modifier = Modifier.weight(1f))
+            if (!isOwner && !clip.author.isFollowing && !clip.author.isOfficial && clip.author.id.isNotBlank()) {
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = VynoraNeonPink,
+                    modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable(onClick = onFollow)
+                ) {
+                    Text("Follow", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White, modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp))
+                }
+            }
+        }
+        Box(
+            modifier = Modifier.fillMaxWidth().height(380.dp).background(Color(0xFF111827)).clickable(onClick = onOpen),
+            contentAlignment = Alignment.Center
+        ) {
+            if (thumb.isNotBlank()) {
+                AsyncImage(model = thumb, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
+            }
+            Box(
+                modifier = Modifier.size(64.dp).clip(CircleShape).background(Color(0x99000000)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(Icons.Filled.PlayArrow, contentDescription = "Play reel", tint = Color.White, modifier = Modifier.size(38.dp))
+            }
+            Text(
+                "REEL",
+                color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold,
+                modifier = Modifier.align(Alignment.TopStart).padding(12.dp).clip(RoundedCornerShape(8.dp)).background(Color(0x99000000)).padding(horizontal = 8.dp, vertical = 3.dp)
+            )
+        }
+        if (clip.caption.isNotBlank()) {
+            Text(clip.caption, color = fg, fontSize = 14.sp, maxLines = 2, modifier = Modifier.padding(12.dp))
+        } else Spacer(modifier = Modifier.height(8.dp))
     }
 }
