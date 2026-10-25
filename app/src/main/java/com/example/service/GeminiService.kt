@@ -117,6 +117,18 @@ object GeminiService {
         }
     }
 
+    /** 3 short reply ideas for a chat message, in the same language as the message. Empty if AI isn't set up. */
+    suspend fun suggestReplies(lastMessage: String): List<String> = withContext(Dispatchers.IO) {
+        val apiKey = key()
+        if (apiKey.isBlank()) return@withContext emptyList()
+        val out = callGeminiApi(
+            "A friend sent this chat message: \"$lastMessage\". Write 3 short, friendly, natural reply options " +
+                    "in the SAME language and script as the message. One reply per line, no numbering, no quotes, max 12 words each.",
+            apiKey
+        ) ?: return@withContext emptyList()
+        out.lines().map { it.trim().trimStart('-', '*', '•', ' ').trim() }.filter { it.isNotBlank() }.take(3)
+    }
+
     /** Any language -> one English sentence (so image generators understand it). Returns the original if AI isn't set up. */
     suspend fun toEnglish(text: String): String = withContext(Dispatchers.IO) {
         val apiKey = key()

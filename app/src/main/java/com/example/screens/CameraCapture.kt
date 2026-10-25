@@ -8,6 +8,7 @@ import androidx.activity.compose.BackHandler
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
+import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.video.FallbackStrategy
@@ -85,6 +86,7 @@ internal fun CameraCaptureScreen(
     var flashOn by remember { mutableStateOf(false) }
     var recording by remember { mutableStateOf<Recording?>(null) }
     var seconds by remember { mutableStateOf(0) }
+    var boomBusy by remember { mutableStateOf(false) }
 
     val imageCapture = remember { ImageCapture.Builder().setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY).build() }
     val recorder = remember {
@@ -150,6 +152,46 @@ internal fun CameraCaptureScreen(
         )
     }
 
+    fun boomerang() {
+        if (boomBusy || videoMode) return
+        boomBusy = true
+        camMode = CreateMode.MOMENT
+        val frames = mutableListOf<android.graphics.Bitmap>()
+        val handler = android.os.Handler(android.os.Looper.getMainLooper())
+        fun next() {
+            if (frames.size >= 10) {
+                Thread {
+                    val out = File(ctx.cacheDir, "vn_boom_${System.currentTimeMillis()}.mp4")
+                    val ok = com.example.util.KenBurnsVideo.renderBoomerang(frames, out)
+                    handler.post {
+                        boomBusy = false
+                        if (ok) onCaptured(cacheFileUri(ctx, out), true, CreateMode.MOMENT, "Original") else onFail("Boomerang failed")
+                    }
+                }.start()
+                return
+            }
+            imageCapture.takePicture(ContextCompat.getMainExecutor(ctx), object : ImageCapture.OnImageCapturedCallback() {
+                override fun onCaptureSuccess(image: ImageProxy) {
+                    try {
+                        val raw = image.toBitmap()
+                        val rot = image.imageInfo.rotationDegrees.toFloat()
+                        val mx = android.graphics.Matrix().apply { postRotate(rot) }
+                        val rotated = android.graphics.Bitmap.createBitmap(raw, 0, 0, raw.width, raw.height, mx, true)
+                        val scale = 960f / maxOf(rotated.width, rotated.height)
+                        frames.add(
+                            if (scale < 1f) android.graphics.Bitmap.createScaledBitmap(rotated, (rotated.width * scale).toInt(), (rotated.height * scale).toInt(), true)
+                            else rotated
+                        )
+                    } catch (e: Exception) {
+                    } finally { image.close() }
+                    next()
+                }
+                override fun onError(exception: ImageCaptureException) { boomBusy = false; onFail("Boomerang failed") }
+            })
+        }
+        next()
+    }
+
     fun toggleRecording() {
         val active = recording
         if (active != null) { active.stop(); return }
@@ -192,6 +234,9 @@ internal fun CameraCaptureScreen(
                     }
                 }
                 if (!videoMode) {
+                    IconButton(onClick = { boomerang() }, enabled = !boomBusy) {
+                        Text(if (boomBusy) "…" else "∞", color = Color.White, fontSize = 24.sp)
+                    }
                     IconButton(onClick = { flashOn = !flashOn }) {
                         Icon(if (flashOn) Icons.Filled.FlashOn else Icons.Filled.FlashOff, contentDescription = "Flash", tint = Color.White)
                     }
