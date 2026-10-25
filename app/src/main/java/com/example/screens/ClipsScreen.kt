@@ -623,8 +623,6 @@ private fun ClipVideoPlayer(
                 color = Color.White,
                 fontSize = 13.sp
             )
-        } else if (!isReady) {
-            CircularProgressIndicator(color = VynoraNeonCyan, modifier = Modifier.size(32.dp))
         }
     }
 }
