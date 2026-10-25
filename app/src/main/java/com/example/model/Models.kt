@@ -116,6 +116,7 @@ data class Comment(
 data class Post(
     val id: String = "",
     val author: User = User(),
+    val authorId: String = "",
     val mediaUrls: List<String> = emptyList(),
     val caption: String = "",
     val hashtags: List<String> = emptyList(),
@@ -137,6 +138,7 @@ data class Post(
 data class Moment(
     val id: String = "",
     val author: User = User(),
+    val authorId: String = "",
     val mediaUrl: String = "",
     val textOverlay: String? = null,
     val musicTrack: String? = null,
@@ -160,6 +162,7 @@ data class PollVotes(val a: Int = 0, val b: Int = 0, val mine: Int = -1)
 data class Clip(
     val id: String = "",
     val author: User = User(),
+    val authorId: String = "",
     val mediaUrl: String = "",
     val thumbnailGradient: List<Long> = listOf(0xFF0D0F18, 0xFFFF2E93, 0xFF00D1FF),
     val caption: String = "",

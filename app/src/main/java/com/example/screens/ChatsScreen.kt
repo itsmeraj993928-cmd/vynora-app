@@ -18,6 +18,8 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -286,6 +288,8 @@ fun ChatRoomScreen(
     var recordSeconds by remember { mutableStateOf(0) }
     var playingMessageId by remember { mutableStateOf<String?>(null) }
     var player by remember { mutableStateOf<MediaPlayer?>(null) }
+    var aiReplies by remember { mutableStateOf<List<String>>(emptyList()) }
+    var aiBusy by remember { mutableStateOf(false) }
 
     DisposableEffect(Unit) {
         onDispose {
@@ -619,6 +623,27 @@ fun ChatRoomScreen(
             }
         }
 
+        if (aiReplies.isNotEmpty()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(cardBg)
+                    .padding(horizontal = 12.dp, vertical = 6.dp)
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                aiReplies.forEach { r ->
+                    Surface(
+                        shape = RoundedCornerShape(16.dp),
+                        color = if (isDarkMode) Color(0xFF1E2235) else Color(0xFFE2E8F0),
+                        modifier = Modifier.clip(RoundedCornerShape(16.dp)).clickable { messageInput = r; aiReplies = emptyList() }
+                    ) {
+                        Text(r, fontSize = 13.sp, color = if (isDarkMode) Color.White else Color(0xFF0F172A), modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp))
+                    }
+                }
+            }
+        }
+
         // --- 3. Composer Bottom Bar ---
         Row(
             modifier = Modifier
@@ -686,6 +711,24 @@ fun ChatRoomScreen(
                 )
             )
 
+            }
+
+            if (!isRecordingAudio) {
+                IconButton(
+                    enabled = !aiBusy,
+                    onClick = {
+                        val last = conversation.messages.lastOrNull { it.senderId != currentUser.id && !it.isAudio && it.text.isNotBlank() }
+                        if (last == null) { onToast("No message from them to reply to yet"); return@IconButton }
+                        aiBusy = true
+                        coroutineScope.launch {
+                            val r = com.example.service.GeminiService.suggestReplies(last.text)
+                            aiBusy = false
+                            if (r.isEmpty()) onToast("AI reply isn't available right now") else aiReplies = r
+                        }
+                    }
+                ) {
+                    Text(if (aiBusy) "…" else "✨", fontSize = 20.sp)
+                }
             }
 
             IconButton(

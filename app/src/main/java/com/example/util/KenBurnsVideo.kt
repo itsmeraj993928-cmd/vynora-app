@@ -19,6 +19,45 @@ object KenBurnsVideo {
     /** style: 0 zoom in, 1 zoom out, 2 pan left, 3 pan right. Takes about as long as the video itself. */
     fun render(src: Bitmap, out: File, style: Int, seconds: Int = 5): Boolean {
         val total = seconds * FPS
+        val bw = src.width.toFloat()
+        val bh = src.height.toFloat()
+        val cover = maxOf(W / bw, H / bh)
+        val m = Matrix()
+        val paint = Paint(Paint.FILTER_BITMAP_FLAG)
+        return encode(out, total) { canvas, f ->
+            val t = f / (total - 1f)
+            val zoom = when (style) { 0 -> 1f + 0.25f * t; 1 -> 1.25f - 0.25f * t; else -> 1.15f }
+            val pan = when (style) { 2 -> (t - 0.5f) * 0.08f * W; 3 -> (0.5f - t) * 0.08f * W; else -> 0f }
+            m.reset()
+            m.postScale(cover, cover)
+            m.postTranslate((W - bw * cover) / 2f, (H - bh * cover) / 2f)
+            m.postScale(zoom, zoom, W / 2f, H / 2f)
+            m.postTranslate(pan, 0f)
+            canvas.drawColor(Color.BLACK)
+            canvas.drawBitmap(src, m, paint)
+        }
+    }
+
+    /** Boomerang: plays the frames forward then backward, 3 times. */
+    fun renderBoomerang(frames: List<Bitmap>, out: File): Boolean {
+        if (frames.size < 3) return false
+        val order = frames.indices.toList() + (frames.size - 2 downTo 1).toList()
+        val seq = order + order + order
+        val perFrame = 2 // each picture is shown for 2 video frames
+        val paint = Paint(Paint.FILTER_BITMAP_FLAG)
+        val m = Matrix()
+        return encode(out, seq.size * perFrame) { canvas, f ->
+            val b = frames[seq[f / perFrame]]
+            val cover = maxOf(W / b.width.toFloat(), H / b.height.toFloat())
+            m.reset()
+            m.postScale(cover, cover)
+            m.postTranslate((W - b.width * cover) / 2f, (H - b.height * cover) / 2f)
+            canvas.drawColor(Color.BLACK)
+            canvas.drawBitmap(b, m, paint)
+        }
+    }
+
+    private fun encode(out: File, total: Int, drawFrame: (android.graphics.Canvas, Int) -> Unit): Boolean {
         var codec: MediaCodec? = null
         var muxer: MediaMuxer? = null
         var surface: android.view.Surface? = null
@@ -70,23 +109,9 @@ object KenBurnsVideo {
                 }
             }
 
-            val bw = src.width.toFloat()
-            val bh = src.height.toFloat()
-            val cover = maxOf(W / bw, H / bh)
-            val m = Matrix()
-            val paint = Paint(Paint.FILTER_BITMAP_FLAG)
             for (f in 0 until total) {
-                val t = f / (total - 1f)
-                val zoom = when (style) { 0 -> 1f + 0.25f * t; 1 -> 1.25f - 0.25f * t; else -> 1.15f }
-                val pan = when (style) { 2 -> (t - 0.5f) * 0.08f * W; 3 -> (0.5f - t) * 0.08f * W; else -> 0f }
-                m.reset()
-                m.postScale(cover, cover)
-                m.postTranslate((W - bw * cover) / 2f, (H - bh * cover) / 2f)
-                m.postScale(zoom, zoom, W / 2f, H / 2f)
-                m.postTranslate(pan, 0f)
                 val canvas = try { s.lockHardwareCanvas() } catch (e: Exception) { s.lockCanvas(null) }
-                canvas.drawColor(Color.BLACK)
-                canvas.drawBitmap(src, m, paint)
+                drawFrame(canvas, f)
                 s.unlockCanvasAndPost(canvas)
                 drain(false)
                 Thread.sleep(1000L / FPS)

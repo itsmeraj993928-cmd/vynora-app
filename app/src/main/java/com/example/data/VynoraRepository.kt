@@ -778,11 +778,14 @@ class VynoraRepository(
         }
     }
 
-    suspend fun saveClip(clip: Clip) {
-        try {
+    /** Returns null on success, or a short reason when saving failed. */
+    suspend fun saveClip(clip: Clip): String? {
+        return try {
             db.collection("clips").document(clip.id).set(clip).await()
+            null
         } catch (e: Exception) {
             Log.e("VynoraRepository", "Error saving clip to Firestore: ${e.message}", e)
+            (e.message ?: "unknown error").take(120)
         }
     }
 

@@ -187,6 +187,7 @@ fun CreateStudioScreen(
     var pollB by remember { mutableStateOf("No") }
     var showPollDialog by remember { mutableStateOf(false) }
     var showTextStory by remember { mutableStateOf(false) }
+    var showEditor by remember { mutableStateOf(false) }
     var aiBusy by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
@@ -312,6 +313,17 @@ fun CreateStudioScreen(
             onPick = { selectedSong = it; showMusicPicker = false },
             onDismiss = { showMusicPicker = false }
         )
+    }
+
+    if (showEditor) {
+        val ep = picked
+        if (ep != null) {
+            StoryEditorDialog(
+                uri = ep.uri,
+                onDone = { u -> picked = GalleryItem(u, false, 0L, 0L); showEditor = false },
+                onCancel = { showEditor = false }
+            )
+        } else showEditor = false
     }
 
     if (showCamera) {
@@ -527,6 +539,12 @@ fun CreateStudioScreen(
                                     )
                                 }
                             }
+                        }
+                    }
+                    if (p != null && !p.isVideo && mode != CreateMode.CLIP) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                            AssistChip(onClick = { showEditor = true }, label = { Text("✏️ Draw & add text", fontSize = 12.sp) })
                         }
                     }
                     Spacer(modifier = Modifier.height(14.dp))
