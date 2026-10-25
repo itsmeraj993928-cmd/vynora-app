@@ -117,88 +117,33 @@ object GeminiService {
         }
     }
 
-    private val videoClient = OkHttpClient.Builder()
-        .connectTimeout(30, TimeUnit.SECONDS)
-        .readTimeout(180, TimeUnit.SECONDS)
-        .writeTimeout(60, TimeUnit.SECONDS)
-        .build()
-
-    class VideoResult(val file: java.io.File?, val error: String?)
-
-    /** Text (any language) -> 5 second vertical video using Veo. Slow (1-3 min) and PAID on the Gemini API. */
-    suspend fun generateVideo(promptAnyLanguage: String, outFile: java.io.File): VideoResult = withContext(Dispatchers.IO) {
+    /** Any language -> one English sentence (so image generators understand it). Returns the original if AI isn't set up. */
+    suspend fun toEnglish(text: String): String = withContext(Dispatchers.IO) {
         val apiKey = key()
-        if (apiKey.isBlank()) return@withContext VideoResult(null, "AI is not set up yet (Gemini key missing).")
-        try {
-            // Veo understands English best, so translate first (works for Hindi, Urdu, Tamil, anything).
-            val english = callGeminiApi(
-                "Translate this video idea into one clear, vivid English sentence for a video generator. " +
-                        "If it is already English, improve it slightly. Return only the sentence: \"$promptAnyLanguage\"",
-                apiKey
-            ) ?: promptAnyLanguage
-
-            val model = "veo-2.0-generate-001"
-            val body = JSONObject()
-                .put("instances", JSONArray().put(JSONObject().put("prompt", english)))
-                .put("parameters", JSONObject().put("aspectRatio", "9:16").put("durationSeconds", 5))
-            val start = Request.Builder()
-                .url("$BASE_URL/$model:predictLongRunning")
-                .header("x-goog-api-key", apiKey)
-                .post(body.toString().toRequestBody("application/json".toMediaType()))
-                .build()
-            val opName = videoClient.newCall(start).execute().use { r ->
-                val txt = r.body?.string() ?: ""
-                if (!r.isSuccessful) return@withContext VideoResult(null, apiErrorMessage(r.code, txt))
-                JSONObject(txt).optString("name")
-            }
-            if (opName.isBlank()) return@withContext VideoResult(null, "Video request failed. Try again.")
-
-            var videoUri = ""
-            for (i in 0 until 40) { // up to ~5 minutes
-                kotlinx.coroutines.delay(8000)
-                val poll = Request.Builder()
-                    .url("https://generativelanguage.googleapis.com/v1beta/$opName")
-                    .header("x-goog-api-key", apiKey)
-                    .build()
-                val done = videoClient.newCall(poll).execute().use { r ->
-                    val txt = r.body?.string() ?: ""
-                    if (!r.isSuccessful) return@withContext VideoResult(null, apiErrorMessage(r.code, txt))
-                    val j = JSONObject(txt)
-                    if (j.optBoolean("done")) {
-                        val err = j.optJSONObject("error")
-                        if (err != null) return@withContext VideoResult(null, err.optString("message", "Video failed"))
-                        val samples = j.optJSONObject("response")?.optJSONObject("generateVideoResponse")?.optJSONArray("generatedSamples")
-                        if (samples == null || samples.length() == 0) {
-                            return@withContext VideoResult(null, "This idea was blocked by safety rules. Try a different prompt.")
-                        }
-                        videoUri = samples.getJSONObject(0).optJSONObject("video")?.optString("uri") ?: ""
-                        true
-                    } else false
-                }
-                if (done) break
-            }
-            if (videoUri.isBlank()) return@withContext VideoResult(null, "Video took too long. Try again.")
-
-            val dl = Request.Builder().url(videoUri).header("x-goog-api-key", apiKey).build()
-            videoClient.newCall(dl).execute().use { r ->
-                if (!r.isSuccessful) return@withContext VideoResult(null, "Couldn't download the video (${r.code}).")
-                r.body?.byteStream()?.use { input -> outFile.outputStream().use { input.copyTo(it) } }
-            }
-            if (outFile.length() < 1000) VideoResult(null, "Video came back empty. Try again.") else VideoResult(outFile, null)
-        } catch (e: Exception) {
-            VideoResult(null, "Network problem. Check internet and try again.")
-        }
+        if (apiKey.isBlank()) return@withContext text
+        callGeminiApi(
+            "Translate this idea into one clear, vivid English sentence describing a beautiful cinematic photo. " +
+                    "If it is already English, improve it slightly. Return only the sentence: \"$text\"",
+            apiKey
+        ) ?: text
     }
 
-    private fun apiErrorMessage(code: Int, body: String): String {
-        val msg = try { JSONObject(body).optJSONObject("error")?.optString("message") ?: "" } catch (e: Exception) { "" }
-        return when {
-            code == 429 -> "AI video limit reached for now. Try later."
-            code == 400 && msg.contains("billing", true) -> "AI video needs a paid Gemini plan (billing) on this key."
-            code == 403 || code == 404 -> "AI video isn't enabled for this Gemini key. It needs a paid plan with Veo access."
-            msg.isNotBlank() -> msg.take(160)
-            else -> "AI video failed ($code)."
-        }
+    private val imageClient = OkHttpClient.Builder()
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(120, TimeUnit.SECONDS)
+        .build()
+
+    /** Free text -> picture (Pollinations, no key). Returns null if the service is down or refuses. */
+    suspend fun textToImage(englishPrompt: String): android.graphics.Bitmap? = withContext(Dispatchers.IO) {
+        try {
+            val url = "https://image.pollinations.ai/prompt/" + android.net.Uri.encode(englishPrompt + ", vertical, high quality") +
+                    "?width=720&height=1280&nologo=true&seed=" + (System.currentTimeMillis() % 100000)
+            imageClient.newCall(Request.Builder().url(url).build()).execute().use { r ->
+                if (!r.isSuccessful) return@withContext null
+                val bytes = r.body?.bytes() ?: return@withContext null
+                android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+            }
+        } catch (e: Exception) { null }
     }
 
     private fun fallbackCaption(topic: String, style: String): String {

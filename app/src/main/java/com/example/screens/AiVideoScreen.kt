@@ -45,7 +45,7 @@ import com.example.ui.theme.VynoraNeonPink
 import kotlinx.coroutines.launch
 import java.io.File
 
-private const val DAILY_LIMIT = 3
+private const val DAILY_LIMIT = 5
 
 private fun todayKey(): String = java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.US).format(java.util.Date())
 
@@ -68,23 +68,41 @@ fun AiVideoScreen(
     var busy by remember { mutableStateOf(false) }
     var result by remember { mutableStateOf<File?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
+    var photoUri by remember { mutableStateOf<Uri?>(null) }
+    val photoPicker = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia()
+    ) { u: Uri? -> if (u != null) photoUri = u }
 
     fun usedToday(): Int = if (prefs.getString("day", "") == todayKey()) prefs.getInt("count", 0) else 0
 
     fun generate() {
-        if (prompt.isBlank()) { onToast("Write your video idea first"); return }
-        if (usedToday() >= DAILY_LIMIT) { onToast("Daily limit reached ($DAILY_LIMIT AI videos per day). Try tomorrow."); return }
+        val pu = photoUri
+        if (pu == null && prompt.isBlank()) { onToast("Write an idea or pick a photo first"); return }
+        if (usedToday() >= DAILY_LIMIT) { onToast("Daily limit reached ($DAILY_LIMIT videos per day). Try tomorrow."); return }
         busy = true
         error = null
         result = null
         scope.launch {
+            val bmp: android.graphics.Bitmap? = if (pu != null) {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { decodeScaled(ctx, pu, 1600) }
+            } else {
+                val en = GeminiService.toEnglish(prompt.trim())
+                GeminiService.textToImage(en)
+            }
+            if (bmp == null) {
+                busy = false
+                error = if (pu != null) "Couldn't read this photo." else "AI picture service is busy right now. Try again, or pick your own photo."
+                return@launch
+            }
             val out = File(ctx.cacheDir, "vn_ai_${System.currentTimeMillis()}.mp4")
-            val r = GeminiService.generateVideo(prompt.trim(), out)
+            val ok = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                com.example.util.KenBurnsVideo.render(bmp, out, (System.currentTimeMillis() % 4).toInt())
+            }
             busy = false
-            if (r.file != null) {
+            if (ok) {
                 prefs.edit().putString("day", todayKey()).putInt("count", usedToday() + 1).apply()
-                result = r.file
-            } else error = r.error ?: "Couldn't make the video"
+                result = out
+            } else error = "Couldn't make the video on this phone. Try another photo."
         }
     }
 
@@ -95,7 +113,7 @@ fun AiVideoScreen(
     ) {
         Text("AI Video ✨", fontWeight = FontWeight.Bold, fontSize = 24.sp, color = fg)
         Text(
-            "Write an idea in any language (Hindi, English, Urdu, Tamil…). AI makes a 5 second vertical video. It takes 1-3 minutes.",
+            "Write an idea in any language (Hindi, English, Urdu, Tamil…) and AI makes a picture, or pick your own photo. It becomes a 5 second vertical video with smooth motion.",
             color = sub, fontSize = 13.sp, lineHeight = 18.sp
         )
         OutlinedTextField(
@@ -106,6 +124,15 @@ fun AiVideoScreen(
             enabled = !busy,
             shape = RoundedCornerShape(14.dp)
         )
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+            OutlinedButton(onClick = {
+                photoPicker.launch(androidx.activity.result.PickVisualMediaRequest(androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly))
+            }, enabled = !busy) { Text(if (photoUri == null) "Pick my photo" else "Change photo", color = fg) }
+            if (photoUri != null) {
+                Text("Photo selected ✓", color = VynoraNeonCyan, fontSize = 13.sp)
+                androidx.compose.material3.TextButton(onClick = { photoUri = null }, enabled = !busy) { Text("Remove", color = sub) }
+            }
+        }
         Button(
             onClick = { generate() },
             enabled = !busy,
@@ -118,7 +145,7 @@ fun AiVideoScreen(
         if (busy) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 CircularProgressIndicator(modifier = Modifier.size(24.dp), color = VynoraNeonCyan, strokeWidth = 3.dp)
-                Text("Please wait, keep this screen open…", color = sub, fontSize = 13.sp)
+                Text("About 10-30 seconds. Keep this screen open…", color = sub, fontSize = 13.sp)
             }
         }
         error?.let { Text(it, color = Color(0xFFF87171), fontSize = 13.sp) }
