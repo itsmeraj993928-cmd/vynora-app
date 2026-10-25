@@ -275,7 +275,7 @@ fun CreateStudioScreen(
     fun openCamera() {
         val need = buildList {
             if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) add(Manifest.permission.CAMERA)
-            if (mode == CreateMode.CLIP && ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) add(Manifest.permission.RECORD_AUDIO)
+            if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) add(Manifest.permission.RECORD_AUDIO)
         }
         if (need.isEmpty()) showCamera = true else camPermLauncher.launch(need.toTypedArray())
     }
@@ -316,8 +316,8 @@ fun CreateStudioScreen(
 
     if (showCamera) {
         CameraCaptureScreen(
-            videoMode = mode == CreateMode.CLIP,
-            onCaptured = { u, isVid -> showCamera = false; pickItem(u, isVid, 0L) },
+            initialMode = mode,
+            onCaptured = { u, isVid, m, f -> showCamera = false; mode = m; selectedFilter = f; pickItem(u, isVid, 0L) },
             onClose = { showCamera = false },
             onFail = { m -> showCamera = false; onToast(m) }
         )
