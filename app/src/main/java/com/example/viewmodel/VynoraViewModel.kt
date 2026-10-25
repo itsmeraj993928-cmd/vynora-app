@@ -1646,7 +1646,8 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
         val (musicLabel, musicUrl) = com.example.util.MusicTrack.unpack(musicTrack)
         val newMoment = Moment(
             id = "m_${System.currentTimeMillis()}",
-            author = user,
+            author = user.copy(avatarUrl = if (user.avatarUrl.startsWith("data:")) "" else user.avatarUrl, photoBase64 = ""),
+            authorId = user.id,
             mediaUrl = mediaUrl,
             textOverlay = textOverlay,
             musicTrack = musicLabel.ifBlank { null },
@@ -1683,6 +1684,7 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
         val newPost = Post(
             id = "p_${System.currentTimeMillis()}",
             author = user,
+            authorId = user.id,
             mediaUrls = mediaUrls,
             caption = caption,
             hashtags = hashtags,
@@ -1731,7 +1733,8 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
         val finalArtist = if (pickedUrl.isNotBlank() && labelParts.size > 1) labelParts[1] else musicArtist
         val newClip = Clip(
             id = "c_${System.currentTimeMillis()}",
-            author = user,
+            author = user.copy(avatarUrl = if (user.avatarUrl.startsWith("data:")) "" else user.avatarUrl, photoBase64 = ""),
+            authorId = user.id,
             mediaUrl = mediaUrl,
             caption = caption,
             musicTitle = finalTitle,
@@ -1749,7 +1752,8 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
         )
 
         viewModelScope.launch {
-            repository.saveClip(newClip)
+            val err = repository.saveClip(newClip)
+            if (err != null) showToast("Reel couldn't be saved: $err")
         }
 
         _uiState.update { state ->
