@@ -228,17 +228,6 @@ private fun ClipItemView(
         )
     }
 
-    // Vinyl spinning rotation
-    val infiniteTransition = rememberInfiniteTransition(label = "vinyl_spin")
-    val rotation by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(4000, easing = LinearEasing)
-        ),
-        label = "vinyl_rotate"
-    )
-
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -418,28 +407,6 @@ private fun ClipItemView(
                     }
                 }
             }
-
-            // Rotating Vinyl Disc
-            Box(
-                modifier = Modifier
-                    .size(44.dp)
-                    .rotate(rotation)
-                    .clip(CircleShape)
-                    .background(Color(0xFF1E2235))
-                    .border(2.dp, Brush.sweepGradient(listOf(VynoraNeonPink, VynoraNeonCyan, VynoraNeonPink)), CircleShape),
-                contentAlignment = Alignment.Center
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(18.dp)
-                        .clip(CircleShape)
-                ) {
-                    StoryRingAvatar(
-                        avatarUrl = clip.author.avatarUrl,
-                        size = 18.dp
-                    )
-                }
-            }
         }
 
         // --- Bottom Info Stack ---
@@ -447,7 +414,7 @@ private fun ClipItemView(
             modifier = Modifier
                 .align(Alignment.BottomStart)
                 .fillMaxWidth(0.78f)
-                .padding(start = 16.dp, bottom = 90.dp)
+                .padding(start = 16.dp, bottom = 28.dp)
         ) {
             // Username & Follow pill
             Row(
