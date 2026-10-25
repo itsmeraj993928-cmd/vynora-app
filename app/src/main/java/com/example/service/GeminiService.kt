@@ -117,6 +117,35 @@ object GeminiService {
         }
     }
 
+    /** Any language -> one English sentence (so image generators understand it). Returns the original if AI isn't set up. */
+    suspend fun toEnglish(text: String): String = withContext(Dispatchers.IO) {
+        val apiKey = key()
+        if (apiKey.isBlank()) return@withContext text
+        callGeminiApi(
+            "Translate this idea into one clear, vivid English sentence describing a beautiful cinematic photo. " +
+                    "If it is already English, improve it slightly. Return only the sentence: \"$text\"",
+            apiKey
+        ) ?: text
+    }
+
+    private val imageClient = OkHttpClient.Builder()
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(120, TimeUnit.SECONDS)
+        .build()
+
+    /** Free text -> picture (Pollinations, no key). Returns null if the service is down or refuses. */
+    suspend fun textToImage(englishPrompt: String): android.graphics.Bitmap? = withContext(Dispatchers.IO) {
+        try {
+            val url = "https://image.pollinations.ai/prompt/" + android.net.Uri.encode(englishPrompt + ", vertical, high quality") +
+                    "?width=720&height=1280&nologo=true&seed=" + (System.currentTimeMillis() % 100000)
+            imageClient.newCall(Request.Builder().url(url).build()).execute().use { r ->
+                if (!r.isSuccessful) return@withContext null
+                val bytes = r.body?.bytes() ?: return@withContext null
+                android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+            }
+        } catch (e: Exception) { null }
+    }
+
     private fun fallbackCaption(topic: String, style: String): String {
         val clean = if (topic.isBlank()) "Midnight city glow" else topic
         return when (style.lowercase()) {

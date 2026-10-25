@@ -136,6 +136,22 @@ fun VynoraBottomNav(
                 )
             }
 
+            // 4b. AI video
+            Box(
+                modifier = Modifier.weight(1f),
+                contentAlignment = Alignment.Center
+            ) {
+                NavItem(
+                    iconSelected = Icons.Filled.AutoAwesome,
+                    iconUnselected = Icons.Outlined.AutoAwesome,
+                    label = "AI",
+                    isSelected = selectedTab == MainTab.AI,
+                    onClick = { onTabSelected(MainTab.AI) },
+                    isDarkMode = isDarkMode,
+                    testTag = "nav_ai"
+                )
+            }
+
             // 5. Profile
             Box(
                 modifier = Modifier.weight(1f),
