@@ -51,7 +51,7 @@ import com.example.ui.theme.VynoraNeonPink
 fun HomeScreen(
     posts: List<Post>,
     clips: List<com.example.model.Clip> = emptyList(),
-    onOpenClips: () -> Unit = {},
+    onOpenClips: (com.example.model.Clip) -> Unit = {},
     moments: List<Moment>,
     currentUser: User,
     unreadNotificationsCount: Int,
@@ -267,7 +267,7 @@ fun HomeScreen(
                             clip = clip,
                             isDarkMode = isDarkMode,
                             isOwner = currentUser.id.isNotBlank() && clip.author.id == currentUser.id,
-                            onOpen = onOpenClips,
+                            onOpen = { onOpenClips(clip) },
                             onAuthorClick = { onAuthorClick(clip.author.username) },
                             onFollow = { onFollowAuthor(clip.author.id, clip.author.username) },
                             modifier = Modifier.padding(horizontal = 14.dp)
