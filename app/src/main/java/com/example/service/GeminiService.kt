@@ -132,13 +132,13 @@ object GeminiService {
 
     class ChatResult(val text: String?, val error: String?)
 
-    /** Chat with the VYNORA AI assistant. history = (isUser, text) pairs, oldest first. */
-    suspend fun chat(history: List<Pair<Boolean, String>>): ChatResult = withContext(Dispatchers.IO) {
+    /** Chat with the VYNORA AI assistant, streaming: onPartial gets the full text so far, many times. history = (isUser, text), oldest first. */
+    suspend fun chatStream(history: List<Pair<Boolean, String>>, onPartial: (String) -> Unit): ChatResult = withContext(Dispatchers.IO) {
         val apiKey = key()
         if (apiKey.isBlank()) return@withContext ChatResult(null, "AI key is missing in this app build. Add the GEMINI_API_KEY secret on GitHub and rebuild.")
         if (history.isEmpty()) return@withContext ChatResult(null, "Nothing to send.")
         val contents = JSONArray()
-        history.takeLast(20).forEach { (isUser, text) ->
+        history.takeLast(16).forEach { (isUser, text) ->
             contents.put(
                 JSONObject().put("role", if (isUser) "user" else "model")
                     .put("parts", JSONArray().put(JSONObject().put("text", text)))
@@ -162,17 +162,17 @@ object GeminiService {
                     .put("contents", contents)
                     .put(
                         "generationConfig",
-                        JSONObject().put("temperature", 1.0).put("maxOutputTokens", 1024)
-                            // no hidden "thinking": faster replies and no cut-off answers
+                        JSONObject().put("temperature", 1.0).put("maxOutputTokens", 600)
                             .put("thinkingConfig", JSONObject().put("thinkingBudget", 0))
                     )
                 val req = Request.Builder()
-                    .url("$BASE_URL/$model:generateContent?key=$apiKey")
+                    .url("$BASE_URL/$model:streamGenerateContent?alt=sse&key=$apiKey")
                     .post(body.toString().toRequestBody("application/json".toMediaType()))
                     .build()
+                var gotAny = false
                 client.newCall(req).execute().use { r ->
-                    val txt = r.body?.string() ?: ""
                     if (!r.isSuccessful) {
+                        val txt = r.body?.string() ?: ""
                         val msg = try { JSONObject(txt).optJSONObject("error")?.optString("message") ?: "" } catch (e: Exception) { "" }
                         lastError = when (r.code) {
                             429 -> "AI quota is full for now (too many requests). Try again in a minute."
@@ -182,10 +182,24 @@ object GeminiService {
                         }
                         return@use
                     }
-                    val parts = JSONObject(txt).optJSONArray("candidates")?.optJSONObject(0)
-                        ?.optJSONObject("content")?.optJSONArray("parts")
-                    val out = parts?.optJSONObject(0)?.optString("text")?.trim()
-                    if (!out.isNullOrBlank()) return@withContext ChatResult(out, null)
+                    val source = r.body?.source() ?: return@use
+                    val acc = StringBuilder()
+                    while (true) {
+                        val line = source.readUtf8Line() ?: break
+                        if (!line.startsWith("data:")) continue
+                        val json = line.removePrefix("data:").trim()
+                        if (json.isEmpty()) continue
+                        val parts = try {
+                            JSONObject(json).optJSONArray("candidates")?.optJSONObject(0)?.optJSONObject("content")?.optJSONArray("parts")
+                        } catch (e: Exception) { null } ?: continue
+                        for (i in 0 until parts.length()) acc.append(parts.optJSONObject(i)?.optString("text") ?: "")
+                        if (acc.isNotEmpty()) {
+                            gotAny = true
+                            val snapshot = acc.toString()
+                            withContext(Dispatchers.Main) { onPartial(snapshot) }
+                        }
+                    }
+                    if (gotAny) return@withContext ChatResult(acc.toString().trim(), null)
                     lastError = "AI gave an empty answer. Try rephrasing."
                 }
             } catch (e: Exception) {
