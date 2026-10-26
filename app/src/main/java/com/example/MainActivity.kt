@@ -217,7 +217,7 @@ fun VynoraApp(viewModel: VynoraViewModel) {
                                     HomeScreen(
                                         posts = uiState.posts,
                                         clips = uiState.clips,
-                                        onOpenClips = { viewModel.selectTab(MainTab.CLIPS) },
+                                        onOpenClips = { c -> viewModel.navigateTo(ScreenDestination.ClipViewer(c.id, "")) },
                                         moments = uiState.moments,
                                         currentUser = uiState.currentUser ?: com.example.model.User(),
                                         unreadNotificationsCount = uiState.notifications.count { !it.isRead },
@@ -628,7 +628,7 @@ fun VynoraApp(viewModel: VynoraViewModel) {
                 )
             }
             is ScreenDestination.ClipViewer -> {
-                val authorClips = uiState.clips.filter { it.author.id == screen.authorId }
+                val authorClips = if (screen.authorId.isBlank()) uiState.clips else uiState.clips.filter { it.author.id == screen.authorId }
                 val startAt = authorClips.indexOfFirst { it.id == screen.clipId }.coerceAtLeast(0)
                 ClipsScreen(
                     currentUserId = uiState.currentUser?.id ?: "",
