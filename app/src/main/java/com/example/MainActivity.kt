@@ -307,7 +307,7 @@ fun VynoraApp(viewModel: VynoraViewModel) {
                                     )
                                 }
                                 MainTab.AI -> {
-                                    com.example.screens.AiVideoScreen(
+                                    com.example.screens.AiHubScreen(
                                         isDarkMode = uiState.isDarkMode,
                                         onPostAsReel = { uri, cap ->
                                             viewModel.startBackgroundUpload("CLIP", uri, cap, emptyList(), null, null, "PUBLIC", "Original audio", false, emptySet())

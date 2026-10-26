@@ -129,6 +129,66 @@ object GeminiService {
         out.lines().map { it.trim().trimStart('-', '*', '•', ' ').trim() }.filter { it.isNotBlank() }.take(3)
     }
 
+    class ChatResult(val text: String?, val error: String?)
+
+    /** Chat with the VYNORA AI assistant. history = (isUser, text) pairs, oldest first. */
+    suspend fun chat(history: List<Pair<Boolean, String>>): ChatResult = withContext(Dispatchers.IO) {
+        val apiKey = key()
+        if (apiKey.isBlank()) return@withContext ChatResult(null, "AI key is missing in this app build. Add the GEMINI_API_KEY secret on GitHub and rebuild.")
+        if (history.isEmpty()) return@withContext ChatResult(null, "Nothing to send.")
+        val contents = JSONArray()
+        history.takeLast(20).forEach { (isUser, text) ->
+            contents.put(
+                JSONObject().put("role", if (isUser) "user" else "model")
+                    .put("parts", JSONArray().put(JSONObject().put("text", text)))
+            )
+        }
+        val system = "You are VYNORA AI, a warm, funny, friendly buddy inside the VYNORA social app. " +
+                "Talk exactly like a real person chatting on WhatsApp: casual, natural and short (1-3 sentences most of the time). " +
+                "Copy the user's language, script and style: if they write Hinglish, reply in Hinglish; Hindi in Hindi; English in English; Urdu in Urdu. " +
+                "Match their mood: joke when they joke, be gentle when they are sad, be excited when they are excited. " +
+                "Use everyday words, like 'yaar', 'arre', 'haha' when it fits, and at most one or two emojis. " +
+                "Never sound like a robot: no bullet lists, no headings, no 'As an AI', no long lectures, no repeating the question back. " +
+                "Ask a small follow-up question sometimes, like a friend would. " +
+                "You can help with captions, ideas, replies, translations and any question, but keep it conversational. " +
+                "Be honest: if someone sincerely asks whether you are an AI or a human, say you are VYNORA AI. " +
+                "Do not produce harmful, sexual or hateful content, and if someone seems to be in real danger or distress, be kind and suggest talking to someone they trust or a local helpline."
+        var lastError = "No answer from AI."
+        for (model in MODELS) {
+            try {
+                val body = JSONObject()
+                    .put("system_instruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text", system))))
+                    .put("contents", contents)
+                    .put("generationConfig", JSONObject().put("temperature", 1.0).put("maxOutputTokens", 400))
+                val req = Request.Builder()
+                    .url("$BASE_URL/$model:generateContent?key=$apiKey")
+                    .post(body.toString().toRequestBody("application/json".toMediaType()))
+                    .build()
+                client.newCall(req).execute().use { r ->
+                    val txt = r.body?.string() ?: ""
+                    if (!r.isSuccessful) {
+                        val msg = try { JSONObject(txt).optJSONObject("error")?.optString("message") ?: "" } catch (e: Exception) { "" }
+                        lastError = when (r.code) {
+                            429 -> "AI quota is full for now (too many requests). Try again in a minute."
+                            400 -> "AI key problem: " + msg.take(120)
+                            403 -> "AI key is blocked or not allowed: " + msg.take(120)
+                            else -> "AI error ${r.code}: " + msg.take(120)
+                        }
+                        return@use
+                    }
+                    val parts = JSONObject(txt).optJSONArray("candidates")?.optJSONObject(0)
+                        ?.optJSONObject("content")?.optJSONArray("parts")
+                    val out = parts?.optJSONObject(0)?.optString("text")?.trim()
+                    if (!out.isNullOrBlank()) return@withContext ChatResult(out, null)
+                    lastError = "AI gave an empty answer. Try rephrasing."
+                }
+            } catch (e: Exception) {
+                lastError = "No internet or AI is unreachable."
+            }
+        }
+        ChatResult(null, lastError)
+    }
+
     /** Any language -> one English sentence (so image generators understand it). Returns the original if AI isn't set up. */
     suspend fun toEnglish(text: String): String = withContext(Dispatchers.IO) {
         val apiKey = key()
