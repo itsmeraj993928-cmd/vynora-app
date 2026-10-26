@@ -642,7 +642,7 @@ private fun ReelFeedCard(
             modifier = Modifier.fillMaxWidth().height(380.dp).background(Color(0xFF111827)).clickable(onClick = onOpen),
             contentAlignment = Alignment.Center
         ) {
-            if (thumb.isNotBlank()) {
+            if (thumb.isNotBlank() && !com.example.util.DataSaver.enabled) {
                 AsyncImage(model = thumb, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
             }
             Box(

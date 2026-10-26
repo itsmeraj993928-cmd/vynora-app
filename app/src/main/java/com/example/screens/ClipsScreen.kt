@@ -199,7 +199,9 @@ private fun ClipItemView(
     onReport: () -> Unit = {}
 ) {
     var captionExpanded by remember { mutableStateOf(false) }
-    var isPlaying by remember { mutableStateOf(true) }
+    val clipCtx = androidx.compose.ui.platform.LocalContext.current
+    // Data Saver on mobile data: reels wait for a tap instead of playing by themselves
+    var isPlaying by remember { mutableStateOf(!(com.example.util.DataSaver.enabled && com.example.util.DataSaver.onMeteredNetwork(clipCtx))) }
     var heartVisible by remember { mutableStateOf(false) }
     LaunchedEffect(heartVisible) {
         if (heartVisible) {
