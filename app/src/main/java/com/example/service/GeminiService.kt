@@ -18,6 +18,7 @@ object GeminiService {
         .writeTimeout(30, TimeUnit.SECONDS)
         .build()
 
+    private val CHAT_MODELS = listOf("gemini-2.5-flash-lite", "gemini-2.5-flash", "gemini-flash-latest")
     private val MODELS = listOf("gemini-2.5-flash", "gemini-flash-latest", "gemini-3.5-flash", "gemini-2.0-flash")
 
     /** The real key, or "" when the build only has the placeholder. */
@@ -154,12 +155,17 @@ object GeminiService {
                 "Be honest: if someone sincerely asks whether you are an AI or a human, say you are VYNORA AI. " +
                 "Do not produce harmful, sexual or hateful content, and if someone seems to be in real danger or distress, be kind and suggest talking to someone they trust or a local helpline."
         var lastError = "No answer from AI."
-        for (model in MODELS) {
+        for (model in CHAT_MODELS) {
             try {
                 val body = JSONObject()
                     .put("system_instruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text", system))))
                     .put("contents", contents)
-                    .put("generationConfig", JSONObject().put("temperature", 1.0).put("maxOutputTokens", 400))
+                    .put(
+                        "generationConfig",
+                        JSONObject().put("temperature", 1.0).put("maxOutputTokens", 1024)
+                            // no hidden "thinking": faster replies and no cut-off answers
+                            .put("thinkingConfig", JSONObject().put("thinkingBudget", 0))
+                    )
                 val req = Request.Builder()
                     .url("$BASE_URL/$model:generateContent?key=$apiKey")
                     .post(body.toString().toRequestBody("application/json".toMediaType()))
