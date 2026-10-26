@@ -129,6 +129,44 @@ object GeminiService {
         out.lines().map { it.trim().trimStart('-', '*', '•', ' ').trim() }.filter { it.isNotBlank() }.take(3)
     }
 
+    /** Chat with the VYNORA AI assistant. history = (isUser, text) pairs, oldest first. Null if AI isn't set up / failed. */
+    suspend fun chat(history: List<Pair<Boolean, String>>): String? = withContext(Dispatchers.IO) {
+        val apiKey = key()
+        if (apiKey.isBlank() || history.isEmpty()) return@withContext null
+        val contents = JSONArray()
+        history.takeLast(20).forEach { (isUser, text) ->
+            contents.put(
+                JSONObject().put("role", if (isUser) "user" else "model")
+                    .put("parts", JSONArray().put(JSONObject().put("text", text)))
+            )
+        }
+        val system = "You are VYNORA AI, a friendly assistant inside the VYNORA social app. " +
+                "Reply in the same language and script the user writes in (Hindi, Hinglish, English, Urdu, etc). " +
+                "Keep answers short and helpful. Help with captions, ideas, replies, translations and general questions. " +
+                "Do not produce harmful, sexual or hateful content."
+        for (model in MODELS) {
+            try {
+                val body = JSONObject()
+                    .put("systemInstruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text", system))))
+                    .put("contents", contents)
+                val req = Request.Builder()
+                    .url("$BASE_URL/$model:generateContent")
+                    .header("x-goog-api-key", apiKey)
+                    .post(body.toString().toRequestBody("application/json".toMediaType()))
+                    .build()
+                client.newCall(req).execute().use { r ->
+                    if (!r.isSuccessful) return@use
+                    val txt = r.body?.string() ?: return@use
+                    val parts = JSONObject(txt).optJSONArray("candidates")?.optJSONObject(0)
+                        ?.optJSONObject("content")?.optJSONArray("parts")
+                    val out = parts?.optJSONObject(0)?.optString("text")?.trim()
+                    if (!out.isNullOrBlank()) return@withContext out
+                }
+            } catch (e: Exception) { }
+        }
+        null
+    }
+
     /** Any language -> one English sentence (so image generators understand it). Returns the original if AI isn't set up. */
     suspend fun toEnglish(text: String): String = withContext(Dispatchers.IO) {
         val apiKey = key()
