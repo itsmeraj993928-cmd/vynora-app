@@ -129,10 +129,13 @@ object GeminiService {
         out.lines().map { it.trim().trimStart('-', '*', '•', ' ').trim() }.filter { it.isNotBlank() }.take(3)
     }
 
-    /** Chat with the VYNORA AI assistant. history = (isUser, text) pairs, oldest first. Null if AI isn't set up / failed. */
-    suspend fun chat(history: List<Pair<Boolean, String>>): String? = withContext(Dispatchers.IO) {
+    class ChatResult(val text: String?, val error: String?)
+
+    /** Chat with the VYNORA AI assistant. history = (isUser, text) pairs, oldest first. */
+    suspend fun chat(history: List<Pair<Boolean, String>>): ChatResult = withContext(Dispatchers.IO) {
         val apiKey = key()
-        if (apiKey.isBlank() || history.isEmpty()) return@withContext null
+        if (apiKey.isBlank()) return@withContext ChatResult(null, "AI key is missing in this app build. Add the GEMINI_API_KEY secret on GitHub and rebuild.")
+        if (history.isEmpty()) return@withContext ChatResult(null, "Nothing to send.")
         val contents = JSONArray()
         history.takeLast(20).forEach { (isUser, text) ->
             contents.put(
@@ -144,27 +147,39 @@ object GeminiService {
                 "Reply in the same language and script the user writes in (Hindi, Hinglish, English, Urdu, etc). " +
                 "Keep answers short and helpful. Help with captions, ideas, replies, translations and general questions. " +
                 "Do not produce harmful, sexual or hateful content."
+        var lastError = "No answer from AI."
         for (model in MODELS) {
             try {
                 val body = JSONObject()
-                    .put("systemInstruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text", system))))
+                    .put("system_instruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text", system))))
                     .put("contents", contents)
                 val req = Request.Builder()
-                    .url("$BASE_URL/$model:generateContent")
-                    .header("x-goog-api-key", apiKey)
+                    .url("$BASE_URL/$model:generateContent?key=$apiKey")
                     .post(body.toString().toRequestBody("application/json".toMediaType()))
                     .build()
                 client.newCall(req).execute().use { r ->
-                    if (!r.isSuccessful) return@use
-                    val txt = r.body?.string() ?: return@use
+                    val txt = r.body?.string() ?: ""
+                    if (!r.isSuccessful) {
+                        val msg = try { JSONObject(txt).optJSONObject("error")?.optString("message") ?: "" } catch (e: Exception) { "" }
+                        lastError = when (r.code) {
+                            429 -> "AI quota is full for now (too many requests). Try again in a minute."
+                            400 -> "AI key problem: " + msg.take(120)
+                            403 -> "AI key is blocked or not allowed: " + msg.take(120)
+                            else -> "AI error ${r.code}: " + msg.take(120)
+                        }
+                        return@use
+                    }
                     val parts = JSONObject(txt).optJSONArray("candidates")?.optJSONObject(0)
                         ?.optJSONObject("content")?.optJSONArray("parts")
                     val out = parts?.optJSONObject(0)?.optString("text")?.trim()
-                    if (!out.isNullOrBlank()) return@withContext out
+                    if (!out.isNullOrBlank()) return@withContext ChatResult(out, null)
+                    lastError = "AI gave an empty answer. Try rephrasing."
                 }
-            } catch (e: Exception) { }
+            } catch (e: Exception) {
+                lastError = "No internet or AI is unreachable."
+            }
         }
-        null
+        ChatResult(null, lastError)
     }
 
     /** Any language -> one English sentence (so image generators understand it). Returns the original if AI isn't set up. */

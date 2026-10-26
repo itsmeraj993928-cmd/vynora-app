@@ -94,7 +94,7 @@ private fun AiChatPane(isDarkMode: Boolean, onToast: (String) -> Unit, modifier:
         scope.launch {
             val r = GeminiService.chat(history)
             busy = false
-            msgs.add(AiMsg(false, r ?: "Sorry, AI isn't available right now. Check your internet and try again."))
+            msgs.add(AiMsg(false, r.text ?: ("⚠️ " + (r.error ?: "AI isn't available right now."))))
         }
     }
 
