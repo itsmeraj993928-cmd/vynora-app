@@ -109,6 +109,12 @@ open class MainActivity : ComponentActivity() {
 
 @Composable
 fun VynoraApp(viewModel: VynoraViewModel) {
+    val appCtx = androidx.compose.ui.platform.LocalContext.current
+    androidx.compose.runtime.remember {
+        com.example.util.DataSaver.init(appCtx)
+        com.example.util.NetworkMonitor.start(appCtx)
+        true
+    }
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val savedAccountsList by viewModel.savedAccounts.collectAsStateWithLifecycle()
     val switchPasswordFor by viewModel.switchPasswordFor.collectAsStateWithLifecycle()
@@ -655,6 +661,20 @@ fun VynoraApp(viewModel: VynoraViewModel) {
                     onBack = { viewModel.navigateBack() },
                     onToast = { msg -> viewModel.showToast(msg) }
                 )
+            }
+        }
+
+        if (!com.example.util.NetworkMonitor.online) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .fillMaxWidth()
+                    .background(androidx.compose.ui.graphics.Color(0xFFB91C1C))
+                    .windowInsetsPadding(androidx.compose.foundation.layout.WindowInsets.statusBars)
+                    .padding(vertical = 4.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                androidx.compose.material3.Text("No internet connection", color = androidx.compose.ui.graphics.Color.White, fontSize = 12.sp)
             }
         }
 

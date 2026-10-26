@@ -1494,6 +1494,10 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
             showToast("Another upload is still in progress. Please wait.")
             return
         }
+        if (!com.example.util.NetworkMonitor.online) {
+            showToast("No internet. Connect to Wi-Fi or mobile data and try again.")
+            return
+        }
         val app = getApplication<Application>()
         val label = when (kind) { "CLIP" -> "reel"; "MOMENT" -> "moment"; else -> "post" }
         val sizeMb = try {
@@ -1505,9 +1509,11 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
         val job: () -> Unit = {
             _uploadStatus.value = UploadStatus(label = label, progress = 0, sizeMb = sizeMb)
             viewModelScope.launch {
+                // photos are shrunk first (much less data); videos upload as they are
+                val sendUri = if (isVideo) uri else (kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { com.example.util.UploadCompress.image(app, uri) } ?: uri)
                 val res = com.example.util.CloudinaryUploader.uploadUri(
                     context = app,
-                    uri = uri,
+                    uri = sendUri,
                     onProgress = { p -> _uploadStatus.update { st -> st?.copy(progress = p) } }
                 )
                 if (res.isSuccess) {

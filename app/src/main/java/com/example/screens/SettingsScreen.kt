@@ -129,6 +129,10 @@ fun SettingsScreen(
 
                         HorizontalDivider(color = if (isDarkMode) Color(0x1AFFFFFF) else Color(0x1F000000))
 
+                        DataSaverRow(isDarkMode)
+
+                        HorizontalDivider(color = if (isDarkMode) Color(0x1AFFFFFF) else Color(0x1F000000))
+
                         // Language Switcher
                         Row(
                             modifier = Modifier
@@ -437,6 +441,30 @@ private fun SettingsNavigationRow(
             contentDescription = null,
             tint = Color.Gray,
             modifier = Modifier.size(16.dp)
+        )
+    }
+}
+
+
+@Composable
+private fun DataSaverRow(isDarkMode: Boolean) {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text("Data Saver", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = if (isDarkMode) Color.White else Color(0xFF0F172A))
+            Text(
+                "Smaller photo uploads, and reels wait for a tap on mobile data",
+                fontSize = 11.sp, color = if (isDarkMode) Color(0xFF94A3B8) else Color(0xFF64748B)
+            )
+        }
+        Switch(
+            checked = com.example.util.DataSaver.enabled,
+            onCheckedChange = { com.example.util.DataSaver.set(ctx, it) },
+            colors = SwitchDefaults.colors(checkedThumbColor = VynoraNeonPink)
         )
     }
 }
