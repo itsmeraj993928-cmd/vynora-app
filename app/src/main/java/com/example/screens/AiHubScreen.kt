@@ -43,8 +43,6 @@ import com.example.service.GeminiService
 import com.example.ui.theme.VynoraNeonPink
 import kotlinx.coroutines.launch
 
-private const val CHAT_DAILY_LIMIT = 60
-
 private class AiMsg(val fromUser: Boolean, val text: String)
 
 /** AI tab: Chat with AI, or make a 5 second video. */
@@ -77,27 +75,21 @@ fun AiHubScreen(
 private fun AiChatPane(isDarkMode: Boolean, onToast: (String) -> Unit, modifier: Modifier = Modifier) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
-    val prefs = remember { ctx.getSharedPreferences("vynora_ai_chat", android.content.Context.MODE_PRIVATE) }
     val msgs = remember { mutableStateListOf(AiMsg(false, "Hi! I'm VYNORA AI ✨ Ask me anything: captions, ideas, replies, translations. Hindi, English, Urdu, any language.")) }
     var input by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
     val fg = if (isDarkMode) Color.White else Color(0xFF0F172A)
     val card = if (isDarkMode) Color(0xFF1E2235) else Color(0xFFE2E8F0)
-    val day = remember { java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.US).format(java.util.Date()) }
 
     LaunchedEffect(msgs.size, busy) { if (msgs.isNotEmpty()) listState.animateScrollToItem(msgs.size - 1) }
-
-    fun used(): Int = if (prefs.getString("day", "") == day) prefs.getInt("count", 0) else 0
 
     fun send() {
         val t = input.trim()
         if (t.isBlank() || busy) return
-        if (used() >= CHAT_DAILY_LIMIT) { onToast("Daily AI chat limit reached. Try tomorrow."); return }
         input = ""
         msgs.add(AiMsg(true, t))
         busy = true
-        prefs.edit().putString("day", day).putInt("count", used() + 1).apply()
         val history = msgs.drop(1).map { it.fromUser to it.text } // skip the greeting
         scope.launch {
             val r = GeminiService.chat(history)
