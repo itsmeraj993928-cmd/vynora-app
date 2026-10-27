@@ -409,7 +409,8 @@ fun VynoraApp(viewModel: VynoraViewModel) {
                     onMomentShown = { m -> viewModel.onMomentShown(m) },
                     pollVotes = pollVotes,
                     onVotePoll = { m, opt -> viewModel.voteMomentPoll(m, opt) },
-                    onOpenProfile = { uid -> viewModel.openUserProfile(uid) }
+                    onOpenProfile = { uid -> viewModel.openUserProfile(uid) },
+                    onDeleteMoment = { m -> viewModel.deleteMyMoment(m.id); viewModel.navigateBack() }
                 )
             }
             is ScreenDestination.ChatsList -> {
@@ -623,13 +624,20 @@ fun VynoraApp(viewModel: VynoraViewModel) {
                 }
             }
             is ScreenDestination.PostViewer -> {
+                val viewedPost = uiState.posts.firstOrNull { it.id == screen.postId }
+                val me = uiState.currentUser
                 PostViewerScreen(
-                    post = uiState.posts.firstOrNull { it.id == screen.postId },
+                    post = viewedPost,
                     isDarkMode = uiState.isDarkMode,
+                    currentLanguage = uiState.currentLanguage,
+                    isOwner = viewedPost != null && me != null && (viewedPost.author.id == me.id || me.role == "ADMIN"),
                     onBack = { viewModel.navigateBack() },
                     onLike = { viewModel.toggleLikePost(screen.postId) },
                     onSave = { viewModel.toggleSavePost(screen.postId) },
                     onComments = { viewModel.openComments(screen.postId) },
+                    onShare = { if (viewedPost != null) viewModel.openShare(viewedPost) },
+                    onReport = { if (viewedPost != null) viewModel.openReportDialog("Post", viewedPost.id, viewedPost.author.username) },
+                    onDelete = { viewModel.deleteMyPost(screen.postId); viewModel.navigateBack() },
                     onUserClick = { uid -> viewModel.openUserProfile(uid) }
                 )
             }

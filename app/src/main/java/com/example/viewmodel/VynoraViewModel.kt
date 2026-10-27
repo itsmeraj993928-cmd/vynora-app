@@ -2008,6 +2008,15 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
         showToast("Post deleted")
     }
 
+    fun deleteMyMoment(momentId: String) {
+        val user = _uiState.value.currentUser ?: return
+        val m = _uiState.value.moments.firstOrNull { it.id == momentId } ?: return
+        if (m.author.id != user.id && user.role != "ADMIN") return
+        _uiState.update { state -> state.copy(moments = state.moments.filterNot { it.id == momentId }) }
+        viewModelScope.launch { repository.deleteMoment(momentId) }
+        showToast("Story deleted")
+    }
+
     fun deleteMyClip(clipId: String) {
         val user = _uiState.value.currentUser ?: return
         val clip = _uiState.value.clips.firstOrNull { it.id == clipId } ?: return
