@@ -31,6 +31,11 @@ jobs:
           GEMINI_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
           if [ -n "$GEMINI_KEY" ]; then echo "GEMINI_API_KEY=$GEMINI_KEY" > .env; fi
+      - name: Add Pixabay key (from GitHub secret, if set)
+        env:
+          PIXABAY_KEY: ${{ secrets.PIXABAY_API_KEY }}
+        run: |
+          if [ -n "$PIXABAY_KEY" ]; then echo "PIXABAY_API_KEY=$PIXABAY_KEY" >> .env; fi
       - name: Build APK
         run: |
           echo "org.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=1g" >> gradle.properties
