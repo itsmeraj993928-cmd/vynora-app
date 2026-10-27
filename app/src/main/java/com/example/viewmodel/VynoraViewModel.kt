@@ -1533,11 +1533,21 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
             viewModelScope.launch {
                 // safety check: AI looks at the photo (or a frame of the video) before anything is uploaded
                 val frame = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { com.example.screens.jpegForAi(app, uri, isVideo) }
-                if (frame != null && com.example.service.GeminiService.isUnsafeImage(frame) == true) {
-                    _uploadStatus.value = null
-                    lastUploadJob = null
-                    showToast("This $label looks like adult or graphic content, so it can't be posted on VYNORA.")
-                    return@launch
+                if (frame != null && com.example.service.GeminiService.canCheckImages()) {
+                    val unsafe = com.example.service.GeminiService.isUnsafeImage(frame)
+                    if (unsafe == true) {
+                        _uploadStatus.value = null
+                        lastUploadJob = null
+                        showToast("This $label looks like adult or graphic content, so it can't be posted on VYNORA.")
+                        return@launch
+                    }
+                    if (unsafe == null) {
+                        // could not be checked: do not let it through, ask to try again
+                        _uploadStatus.value = null
+                        lastUploadJob = null
+                        showToast("Safety check could not run right now. Check your internet and try again in a minute.")
+                        return@launch
+                    }
                 }
                 // photos are shrunk first (much less data); videos upload as they are
                 val sendUri = if (isVideo) uri else (kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { com.example.util.UploadCompress.image(app, uri) } ?: uri)

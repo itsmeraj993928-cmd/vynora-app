@@ -41,14 +41,17 @@ object GeminiService {
         callGeminiApi(prompt, apiKey, android.util.Base64.encodeToString(jpeg, android.util.Base64.NO_WRAP))
     }
     /** true = adult/graphic image, false = fine, null = could not check (AI off or busy). */
+    fun canCheckImages(): Boolean = key().isNotBlank()
+
     suspend fun isUnsafeImage(jpeg: ByteArray): Boolean? = withContext(Dispatchers.IO) {
         val apiKey = key()
         if (apiKey.isBlank()) return@withContext null
         val b64 = android.util.Base64.encodeToString(jpeg, android.util.Base64.NO_WRAP)
         val prompt = "You are a strict content moderator for a social app used by teenagers. Look at this image. " +
-                "Does it show nudity, a sexual act, sexually explicit or very revealing sexual content, " +
-                "or extreme gore/violence? Answer with exactly one word: UNSAFE or SAFE."
-        for (model in listOf("gemini-2.5-flash", "gemini-2.0-flash", "gemini-flash-latest")) {
+                "Does it show nudity or partial nudity, a sexual act, sexually explicit or suggestive content, " +
+                "lingerie/underwear-only or very revealing sexual poses, or extreme gore/violence? " +
+                "When in doubt, say UNSAFE. Answer with exactly one word: UNSAFE or SAFE."
+        for (model in listOf("gemini-2.5-flash", "gemini-2.0-flash", "gemini-flash-latest", "gemini-2.5-flash-lite", "gemini-2.5-flash", "gemini-2.0-flash")) {
             try {
                 val parts = JSONArray()
                     .put(JSONObject().put("inline_data", JSONObject().put("mime_type", "image/jpeg").put("data", b64)))
@@ -62,12 +65,13 @@ object GeminiService {
                     val json = JSONObject(r.body?.string() ?: return@use null)
                     // Google refusing to look at the picture is itself a strong warning sign
                     if (json.optJSONObject("promptFeedback")?.optString("blockReason").orEmpty().isNotBlank()) return@use true
-                    val cand = json.optJSONArray("candidates")?.optJSONObject(0) ?: return@use null
+                    val cand = json.optJSONArray("candidates")?.optJSONObject(0) ?: return@use true // no answer at all = Google refused the picture
                     val text = cand.optJSONObject("content")?.optJSONArray("parts")?.optJSONObject(0)?.optString("text").orEmpty().uppercase()
+                    val reason = cand.optString("finishReason")
                     when {
                         text.contains("UNSAFE") -> true
                         text.contains("SAFE") -> false
-                        cand.optString("finishReason") == "SAFETY" -> true
+                        reason.isNotBlank() && reason != "STOP" && reason != "MAX_TOKENS" -> true // SAFETY, PROHIBITED_CONTENT, IMAGE_SAFETY ...
                         else -> null
                     }
                 }
