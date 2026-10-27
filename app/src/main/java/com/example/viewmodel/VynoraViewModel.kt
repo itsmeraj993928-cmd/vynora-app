@@ -2011,7 +2011,7 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     /** Admin tool: fills the app with free Pixabay videos as reels (topic "mix" cycles many topics). */
-    fun importPixabayReels(topic: String, count: Int, onProgress: (Int) -> Unit, onDone: (Int, String) -> Unit) {
+    fun importPixabayReels(topic: String, count: Int, withMusic: Boolean, onProgress: (Int) -> Unit, onDone: (Int, String) -> Unit) {
         val user = _uiState.value.currentUser ?: return
         if (!com.example.util.StockVideoService.isConfigured()) {
             onDone(0, "Pixabay key is missing in this build. Add the PIXABAY_API_KEY secret on GitHub and rebuild.")
@@ -2020,6 +2020,13 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch {
             val have = _uiState.value.clips.map { it.id }.toHashSet()
             val topics = if (topic == "mix") com.example.util.StockVideoService.TOPICS else listOf(topic)
+            // optional songs (30s previews from the same free search the music picker uses)
+            val songs = ArrayList<com.example.util.MusicTrack>()
+            if (withMusic) {
+                for (mood in listOf("Lofi", "Bollywood", "Punjabi", "Party", "Romantic")) {
+                    com.example.util.MusicSearch.search(mood, 20).getOrNull()?.let { songs.addAll(it) }
+                }
+            }
             var done = 0
             var page = 1
             var emptyRounds = 0
@@ -2045,8 +2052,9 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
                                 cloudinaryPublicId = up.publicId,
                                 thumbnailUrl = com.example.util.reelPoster(up.secureUrl, ""),
                                 caption = "#" + t.replace(" ", "") + " • Video by ${v.creator} on Pixabay",
-                                musicTitle = "Original audio",
-                                musicArtist = user.username,
+                                musicTitle = if (songs.isNotEmpty()) songs[done % songs.size].title else "Original audio",
+                                musicArtist = if (songs.isNotEmpty()) songs[done % songs.size].artist else user.username,
+                                musicUrl = if (songs.isNotEmpty()) songs[done % songs.size].previewUrl else "",
                                 createdAt = System.currentTimeMillis() - done,
                                 visibility = "PUBLIC"
                             )
