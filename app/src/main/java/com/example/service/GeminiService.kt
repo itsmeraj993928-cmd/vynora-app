@@ -51,7 +51,7 @@ object GeminiService {
                 "Does it show nudity or partial nudity, a sexual act, sexually explicit or suggestive content, " +
                 "lingerie/underwear-only or very revealing sexual poses, or extreme gore/violence? " +
                 "When in doubt, say UNSAFE. Answer with exactly one word: UNSAFE or SAFE."
-        for (model in listOf("gemini-2.5-flash", "gemini-2.0-flash", "gemini-flash-latest", "gemini-2.5-flash-lite", "gemini-2.5-flash", "gemini-2.0-flash")) {
+        for (model in listOf("gemini-2.5-flash", "gemini-2.0-flash", "gemini-2.5-flash-lite", "gemini-flash-latest")) {
             try {
                 val parts = JSONArray()
                     .put(JSONObject().put("inline_data", JSONObject().put("mime_type", "image/jpeg").put("data", b64)))

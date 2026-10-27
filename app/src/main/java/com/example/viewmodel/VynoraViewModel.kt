@@ -1531,23 +1531,11 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
         val job: () -> Unit = {
             _uploadStatus.value = UploadStatus(label = label, progress = 0, sizeMb = sizeMb)
             viewModelScope.launch {
-                // safety check: AI looks at the photo (or a frame of the video) before anything is uploaded
-                val frame = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { com.example.screens.jpegForAi(app, uri, isVideo) }
-                if (frame != null && com.example.service.GeminiService.canCheckImages()) {
-                    val unsafe = com.example.service.GeminiService.isUnsafeImage(frame)
-                    if (unsafe == true) {
-                        _uploadStatus.value = null
-                        lastUploadJob = null
-                        showToast("This $label can't be posted because it contains adult or sexually explicit content, which is against VYNORA's Community Guidelines.")
-                        return@launch
-                    }
-                    if (unsafe == null) {
-                        // could not be checked: do not let it through, ask to try again
-                        _uploadStatus.value = null
-                        lastUploadJob = null
-                        showToast("We couldn't complete the safety review right now. Please check your connection and try again in a minute.")
-                        return@launch
-                    }
+                // safety check runs at the same time as the upload (so it adds no waiting); nothing is published until it passes
+                val safety = async(kotlinx.coroutines.Dispatchers.IO) {
+                    val frame = com.example.screens.jpegForAi(app, uri, isVideo)
+                    if (frame == null || !com.example.service.GeminiService.canCheckImages()) 0
+                    else when (com.example.service.GeminiService.isUnsafeImage(frame)) { true -> 1; false -> 0; null -> 2 }
                 }
                 // photos are shrunk first (much less data); videos upload as they are
                 val sendUri = if (isVideo) uri else (kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { com.example.util.UploadCompress.image(app, uri) } ?: uri)
@@ -1556,6 +1544,19 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
                     uri = sendUri,
                     onProgress = { p -> _uploadStatus.update { st -> st?.copy(progress = p) } }
                 )
+                val verdict = safety.await()
+                if (verdict == 1) {
+                    _uploadStatus.value = null
+                    lastUploadJob = null
+                    showToast("This $label can't be posted because it contains adult or sexually explicit content, which is against VYNORA's Community Guidelines.")
+                    return@launch
+                }
+                if (verdict == 2) {
+                    _uploadStatus.value = null
+                    lastUploadJob = null
+                    showToast("We couldn't complete the safety review right now. Please check your connection and try again in a minute.")
+                    return@launch
+                }
                 if (res.isSuccess) {
                     val result = res.getOrNull()
                     val url = result?.secureUrl
