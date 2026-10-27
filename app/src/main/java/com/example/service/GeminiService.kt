@@ -157,12 +157,12 @@ object GeminiService {
         var lastError = "No answer from AI."
         var retryable = true
         val t0 = System.currentTimeMillis()
-        val chatClient = client.newBuilder().connectTimeout(8, TimeUnit.SECONDS).readTimeout(20, TimeUnit.SECONDS).build()
+        val chatClient = client.newBuilder().connectTimeout(15, TimeUnit.SECONDS).readTimeout(30, TimeUnit.SECONDS).build()
         for (round in 0 until 2) {
         if (round > 0) { if (!retryable) break; kotlinx.coroutines.delay(1000L) }
         retryable = false
         for (model in CHAT_MODELS) {
-            if (System.currentTimeMillis() - t0 > 22000) break
+            if (System.currentTimeMillis() - t0 > 35000) break
             try {
                 val body = JSONObject()
                     .put("system_instruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text", system))))
@@ -212,12 +212,40 @@ object GeminiService {
                     lastError = "AI gave an empty answer. Try rephrasing."
                 }
             } catch (e: Exception) {
-                lastError = "No internet or AI is unreachable."
+                lastError = "No internet or AI is unreachable (" + (e.javaClass.simpleName) + ")."
                 retryable = true
             }
         }
         }
+        // Backup AI (no key needed) when Gemini is busy/blocked/unreachable
+        val backup = backupChat(history, system)
+        if (backup != null) {
+            withContext(Dispatchers.Main) { onPartial(backup) }
+            return@withContext ChatResult(backup, null)
+        }
         ChatResult(null, lastError)
+    }
+
+    /** Free backup chat provider (OpenAI-compatible, no API key). Returns null on any failure. */
+    private fun backupChat(history: List<Pair<Boolean, String>>, system: String): String? {
+        return try {
+            val msgs = JSONArray().put(JSONObject().put("role", "system").put("content", system))
+            history.takeLast(12).forEach { (isUser, text) ->
+                msgs.put(JSONObject().put("role", if (isUser) "user" else "assistant").put("content", text))
+            }
+            val body = JSONObject().put("model", "openai").put("messages", msgs).put("temperature", 1.0)
+            val req = Request.Builder()
+                .url("https://text.pollinations.ai/openai")
+                .post(body.toString().toRequestBody("application/json".toMediaType()))
+                .build()
+            val c = client.newBuilder().connectTimeout(15, TimeUnit.SECONDS).readTimeout(45, TimeUnit.SECONDS).build()
+            c.newCall(req).execute().use { r ->
+                if (!r.isSuccessful) return null
+                val txt = JSONObject(r.body?.string() ?: return null)
+                    .optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("message")?.optString("content")?.trim()
+                if (txt.isNullOrBlank()) null else txt
+            }
+        } catch (e: Exception) { null }
     }
 
     /** Any language -> one English sentence (so image generators understand it). Returns the original if AI isn't set up. */
