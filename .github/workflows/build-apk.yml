@@ -31,6 +31,11 @@ jobs:
           GEMINI_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
           if [ -n "$GEMINI_KEY" ]; then echo "GEMINI_API_KEY=$GEMINI_KEY" > .env; fi
+      - name: Add Pexels key (from GitHub secret, if set)
+        env:
+          PEXELS_KEY: ${{ secrets.PEXELS_API_KEY }}
+        run: |
+          if [ -n "$PEXELS_KEY" ]; then echo "PEXELS_API_KEY=$PEXELS_KEY" >> .env; fi
       - name: Build APK
         run: |
           echo "org.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=1g" >> gradle.properties

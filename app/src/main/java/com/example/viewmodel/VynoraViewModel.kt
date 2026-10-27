@@ -2008,6 +2008,48 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
         showToast("Post deleted")
     }
 
+    /** Admin tool: fills the app with free Pexels videos as reels (topic "mix" cycles many topics). */
+    fun importPexelsReels(topic: String, count: Int, onProgress: (Int) -> Unit, onDone: (Int, String) -> Unit) {
+        val user = _uiState.value.currentUser ?: return
+        if (!com.example.util.PexelsService.isConfigured()) {
+            onDone(0, "Pexels key is missing in this build. Add the PEXELS_API_KEY secret on GitHub and rebuild.")
+            return
+        }
+        viewModelScope.launch {
+            val have = _uiState.value.clips.map { it.id }.toHashSet()
+            val topics = if (topic == "mix") com.example.util.PexelsService.TOPICS else listOf(topic)
+            var done = 0
+            var page = 1
+            var emptyRounds = 0
+            while (done < count && emptyRounds < topics.size && page <= 6) {
+                for (t in topics) {
+                    if (done >= count) break
+                    val vids = com.example.util.PexelsService.search(t, page)
+                    if (vids.isEmpty()) { emptyRounds++; continue }
+                    for (v in vids) {
+                        if (done >= count) break
+                        val id = "px_${v.id}"
+                        if (id in have) continue
+                        val clip = Clip(
+                            id = id,
+                            author = user.copy(avatarUrl = if (user.avatarUrl.startsWith("data:")) "" else user.avatarUrl, photoBase64 = ""),
+                            authorId = user.id,
+                            mediaUrl = v.link,
+                            caption = "#" + t.replace(" ", "") + " • Video by ${v.creator} on Pexels",
+                            musicTitle = "Original audio",
+                            musicArtist = user.username,
+                            createdAt = System.currentTimeMillis() - done,
+                            visibility = "PUBLIC"
+                        )
+                        if (repository.saveClip(clip) == null) { done++; have.add(id); onProgress(done) }
+                    }
+                }
+                page++
+            }
+            onDone(done, if (done == 0) "Nothing was imported. Check the Pexels key or your internet." else "")
+        }
+    }
+
     fun deleteMyMoment(momentId: String) {
         val user = _uiState.value.currentUser ?: return
         val m = _uiState.value.moments.firstOrNull { it.id == momentId } ?: return

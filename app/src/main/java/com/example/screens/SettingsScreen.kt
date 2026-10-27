@@ -34,8 +34,49 @@ fun SettingsScreen(
     onOpenLegalDoc: (String) -> Unit,
     onBack: () -> Unit,
     onToast: (String) -> Unit,
+    canImportReels: Boolean = false,
+    onImportReels: (String, Int, (Int) -> Unit, (Int, String) -> Unit) -> Unit = { _, _, _, _ -> },
     modifier: Modifier = Modifier
 ) {
+    var showImport by remember { mutableStateOf(false) }
+    var importing by remember { mutableStateOf(false) }
+    var importDone by remember { mutableStateOf(0) }
+    var importTopic by remember { mutableStateOf("mix") }
+    var importCount by remember { mutableStateOf(100) }
+    if (showImport) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { if (!importing) showImport = false },
+            title = { Text("Import free reels (Pexels)") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Adds royalty-free videos as reels on your account, with credit to the creator in the caption. Keep the app open while it runs.", fontSize = 12.sp)
+                    Text("Topic: " + (if (importTopic == "mix") "Mix of everything" else importTopic), fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        listOf("mix", "nature", "dance", "travel").forEach { t ->
+                            androidx.compose.material3.FilterChip(selected = importTopic == t, onClick = { if (!importing) importTopic = t }, label = { Text(if (t == "mix") "Mix" else t, fontSize = 11.sp) })
+                        }
+                    }
+                    Text("How many: $importCount", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        listOf(50, 100, 300, 1000).forEach { n ->
+                            androidx.compose.material3.FilterChip(selected = importCount == n, onClick = { if (!importing) importCount = n }, label = { Text("$n", fontSize = 11.sp) })
+                        }
+                    }
+                    if (importing) Text("Imported $importDone / $importCount ...", color = VynoraNeonPink, fontWeight = FontWeight.Bold)
+                }
+            },
+            confirmButton = {
+                TextButton(enabled = !importing, onClick = {
+                    importing = true; importDone = 0
+                    onImportReels(importTopic, importCount, { importDone = it }, { n, err ->
+                        importing = false; showImport = false
+                        onToast(if (err.isNotBlank()) err else "Imported $n reels")
+                    })
+                }) { Text(if (importing) "Working..." else "Start import", color = VynoraNeonPink, fontWeight = FontWeight.Bold) }
+            },
+            dismissButton = { TextButton(enabled = !importing, onClick = { showImport = false }) { Text("Close") } }
+        )
+    }
     var isPrivateAccount by remember { mutableStateOf(false) }
     var showActivityStatus by remember { mutableStateOf(true) }
     var filterOffensiveComments by remember { mutableStateOf(true) }
@@ -130,6 +171,16 @@ fun SettingsScreen(
                         HorizontalDivider(color = if (isDarkMode) Color(0x1AFFFFFF) else Color(0x1F000000))
 
                         DataSaverRow(isDarkMode)
+
+                        if (canImportReels) {
+                            HorizontalDivider(color = if (isDarkMode) Color(0x1AFFFFFF) else Color(0x1F000000))
+                            Row(
+                                modifier = Modifier.fillMaxWidth().clickable { showImport = true }.padding(16.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("Import free reels (admin)", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = if (isDarkMode) Color.White else Color(0xFF0F172A))
+                            }
+                        }
 
                         HorizontalDivider(color = if (isDarkMode) Color(0x1AFFFFFF) else Color(0x1F000000))
 

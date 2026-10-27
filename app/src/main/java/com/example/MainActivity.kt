@@ -521,6 +521,8 @@ fun VynoraApp(viewModel: VynoraViewModel) {
                     onToggleTheme = { viewModel.toggleTheme() },
                     onSelectLanguage = { lang -> viewModel.setLanguage(lang) },
                     onOpenLegalDoc = { doc -> viewModel.navigateTo(ScreenDestination.Legal(doc)) },
+                    canImportReels = uiState.currentUser?.let { it.role == "ADMIN" || it.email.equals("itsmeraj993928@gmail.com", ignoreCase = true) } == true,
+                    onImportReels = { topic, n, prog, done -> viewModel.importPexelsReels(topic, n, prog, done) },
                     onBack = { viewModel.navigateBack() },
                     onToast = { msg ->
                         if (msg.contains("Logged out", ignoreCase = true)) {
