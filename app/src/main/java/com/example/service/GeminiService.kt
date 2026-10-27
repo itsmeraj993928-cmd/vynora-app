@@ -51,7 +51,7 @@ object GeminiService {
                 "Does it show nudity or partial nudity, a sexual act, sexually explicit or suggestive content, " +
                 "lingerie/underwear-only or very revealing sexual poses, or extreme gore/violence? " +
                 "When in doubt, say UNSAFE. Answer with exactly one word: UNSAFE or SAFE."
-        for (model in listOf("gemini-2.5-flash", "gemini-2.0-flash", "gemini-flash-latest", "gemini-2.5-flash-lite", "gemini-2.5-flash", "gemini-2.0-flash")) {
+        for (model in listOf("gemini-2.5-flash", "gemini-2.0-flash", "gemini-2.5-flash-lite")) {
             try {
                 val parts = JSONArray()
                     .put(JSONObject().put("inline_data", JSONObject().put("mime_type", "image/jpeg").put("data", b64)))
@@ -60,8 +60,12 @@ object GeminiService {
                     .put("generationConfig", JSONObject().put("maxOutputTokens", 10).put("thinkingConfig", JSONObject().put("thinkingBudget", 0)))
                 val req = Request.Builder().url("$BASE_URL/$model:generateContent?key=$apiKey")
                     .post(body.toString().toRequestBody("application/json".toMediaType())).build()
-                val verdict: Boolean? = client.newCall(req).execute().use { r ->
-                    if (!r.isSuccessful) return@use null
+                val verdict: Boolean? = client.newBuilder().connectTimeout(8, TimeUnit.SECONDS).readTimeout(12, TimeUnit.SECONDS).build().newCall(req).execute().use { r ->
+                    if (!r.isSuccessful) {
+                        val err = r.body?.string().orEmpty().lowercase()
+                        // the AI refused the picture for safety / policy reasons
+                        return@use if (Regex("safety|blocked|prohibit|policy|sexual|explicit").containsMatchIn(err)) true else null
+                    }
                     val json = JSONObject(r.body?.string() ?: return@use null)
                     // Google refusing to look at the picture is itself a strong warning sign
                     if (json.optJSONObject("promptFeedback")?.optString("blockReason").orEmpty().isNotBlank()) return@use true
