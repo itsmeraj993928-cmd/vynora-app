@@ -2035,6 +2035,7 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
                             author = user.copy(avatarUrl = if (user.avatarUrl.startsWith("data:")) "" else user.avatarUrl, photoBase64 = ""),
                             authorId = user.id,
                             mediaUrl = v.link,
+                            thumbnailUrl = v.thumb,
                             caption = "#" + t.replace(" ", "") + " • Video by ${v.creator} on Pixabay",
                             musicTitle = "Original audio",
                             musicArtist = user.username,

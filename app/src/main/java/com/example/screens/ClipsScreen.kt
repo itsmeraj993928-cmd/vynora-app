@@ -249,6 +249,7 @@ private fun ClipItemView(
             shouldPlay = isPlaying && isCurrentPage,
             isMuted = isMuted,
             musicUrl = clip.musicUrl,
+            posterUrl = clip.thumbnailUrl,
             modifier = Modifier.fillMaxSize()
         )
 
@@ -544,6 +545,7 @@ private fun ClipVideoPlayer(
     shouldPlay: Boolean,
     isMuted: Boolean,
     musicUrl: String = "",
+    posterUrl: String = "",
     modifier: Modifier = Modifier
 ) {
     val videoUrl = remember(url) { toPlayableVideoUrl(url) }
@@ -619,6 +621,9 @@ private fun ClipVideoPlayer(
                 try { vv.stopPlayback() } catch (_: Throwable) { }
             }
         )
+        if (!isReady && !hasError && posterUrl.isNotBlank()) {
+            coil.compose.AsyncImage(model = posterUrl, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = androidx.compose.ui.layout.ContentScale.Fit)
+        }
         if (hasError) {
             Text(
                 text = "Video could not be loaded",

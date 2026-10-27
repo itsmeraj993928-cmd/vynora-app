@@ -614,9 +614,10 @@ private fun ReelFeedCard(
 ) {
     val fg = if (isDarkMode) Color.White else Color(0xFF0F172A)
     val card = if (isDarkMode) Color(0xFF0F121E) else Color.White
-    val thumb = remember(clip.mediaUrl) {
+    val thumb = remember(clip.mediaUrl, clip.thumbnailUrl) {
         val u = clip.mediaUrl
-        if (u.contains("/video/upload/") && u.contains(".")) u.substringBeforeLast('.') + ".jpg" else ""
+        if (clip.thumbnailUrl.isNotBlank()) clip.thumbnailUrl
+        else if (u.contains("/video/upload/") && u.contains(".")) u.substringBeforeLast('.') + ".jpg" else ""
     }
     Column(
         modifier = modifier.fillMaxWidth().padding(vertical = 8.dp).clip(RoundedCornerShape(20.dp)).background(card)
@@ -642,7 +643,7 @@ private fun ReelFeedCard(
             modifier = Modifier.fillMaxWidth().height(380.dp).background(Color(0xFF111827)).clickable(onClick = onOpen),
             contentAlignment = Alignment.Center
         ) {
-            if (thumb.isNotBlank() && !com.example.util.DataSaver.enabled) {
+            if (thumb.isNotBlank() && (!com.example.util.DataSaver.enabled || clip.thumbnailUrl.isNotBlank())) {
                 AsyncImage(model = thumb, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
             }
             Box(

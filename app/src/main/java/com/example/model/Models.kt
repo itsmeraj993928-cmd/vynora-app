@@ -177,6 +177,7 @@ data class Clip(
     val isFollowing: Boolean = false,
     val createdAt: Long = System.currentTimeMillis(),
     val cloudinaryPublicId: String = "",
+    val thumbnailUrl: String = "",
     val visibility: String = "PUBLIC", // PUBLIC, FOLLOWERS, PRIVATE
     val comments: List<Comment> = emptyList(),
     val hideLikeCount: Boolean = false,
