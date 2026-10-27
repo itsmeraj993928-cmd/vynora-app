@@ -1285,6 +1285,21 @@ class VynoraRepository(
         }
     }
 
+    /** +1 on the reported post / reel / story so it can be hidden once enough people report it. */
+    suspend fun bumpReportCount(targetType: String, targetId: String) {
+        val col = when (targetType.lowercase()) {
+            "post" -> "posts"
+            "clip", "reel" -> "clips"
+            "moment", "story" -> "moments"
+            else -> return
+        }
+        try {
+            db.collection(col).document(targetId).update("reportCount", com.google.firebase.firestore.FieldValue.increment(1)).await()
+        } catch (e: Exception) {
+            Log.w("VynoraRepo", "bumpReportCount failed", e)
+        }
+    }
+
     suspend fun saveReport(report: ReportItem) {
         try {
             db.collection("reports").document(report.id).set(report).await()
