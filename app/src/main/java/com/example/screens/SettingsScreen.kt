@@ -35,7 +35,7 @@ fun SettingsScreen(
     onBack: () -> Unit,
     onToast: (String) -> Unit,
     canImportReels: Boolean = false,
-    onImportReels: (String, Int, (Int) -> Unit, (Int, String) -> Unit) -> Unit = { _, _, _, _ -> },
+    onImportReels: (String, Int, Boolean, (Int) -> Unit, (Int, String) -> Unit) -> Unit = { _, _, _, _, _ -> },
     modifier: Modifier = Modifier
 ) {
     var showImport by remember { mutableStateOf(false) }
@@ -43,6 +43,7 @@ fun SettingsScreen(
     var importDone by remember { mutableStateOf(0) }
     var importTopic by remember { mutableStateOf("mix") }
     var importCount by remember { mutableStateOf(100) }
+    var importMusic by remember { mutableStateOf(true) }
     if (showImport) {
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { if (!importing) showImport = false },
@@ -62,13 +63,17 @@ fun SettingsScreen(
                             androidx.compose.material3.FilterChip(selected = importCount == n, onClick = { if (!importing) importCount = n }, label = { Text("$n", fontSize = 11.sp) })
                         }
                     }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Add a song (stock videos have no sound)", fontSize = 12.sp, modifier = Modifier.weight(1f))
+                        Switch(checked = importMusic, onCheckedChange = { if (!importing) importMusic = it }, colors = SwitchDefaults.colors(checkedThumbColor = VynoraNeonPink))
+                    }
                     if (importing) Text("Imported $importDone / $importCount ...", color = VynoraNeonPink, fontWeight = FontWeight.Bold)
                 }
             },
             confirmButton = {
                 TextButton(enabled = !importing, onClick = {
                     importing = true; importDone = 0
-                    onImportReels(importTopic, importCount, { importDone = it }, { n, err ->
+                    onImportReels(importTopic, importCount, importMusic, { importDone = it }, { n, err ->
                         importing = false; showImport = false
                         onToast(if (err.isNotBlank()) err else "Imported $n reels")
                     })

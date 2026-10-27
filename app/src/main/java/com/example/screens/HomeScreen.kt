@@ -616,8 +616,7 @@ private fun ReelFeedCard(
     val card = if (isDarkMode) Color(0xFF0F121E) else Color.White
     val thumb = remember(clip.mediaUrl, clip.thumbnailUrl) {
         val u = clip.mediaUrl
-        if (clip.thumbnailUrl.isNotBlank()) clip.thumbnailUrl
-        else if (u.contains("/video/upload/") && u.contains(".")) u.substringBeforeLast('.') + ".jpg" else ""
+        com.example.util.reelPoster(u, clip.thumbnailUrl)
     }
     Column(
         modifier = modifier.fillMaxWidth().padding(vertical = 8.dp).clip(RoundedCornerShape(20.dp)).background(card)
