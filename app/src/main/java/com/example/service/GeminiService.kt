@@ -156,10 +156,13 @@ object GeminiService {
                 "Do not produce harmful, sexual or hateful content, and if someone seems to be in real danger or distress, be kind and suggest talking to someone they trust or a local helpline."
         var lastError = "No answer from AI."
         var retryable = true
-        for (round in 0 until 3) {
-        if (round > 0) { if (!retryable) break; kotlinx.coroutines.delay(1500L * round) }
+        val t0 = System.currentTimeMillis()
+        val chatClient = client.newBuilder().connectTimeout(8, TimeUnit.SECONDS).readTimeout(20, TimeUnit.SECONDS).build()
+        for (round in 0 until 2) {
+        if (round > 0) { if (!retryable) break; kotlinx.coroutines.delay(1000L) }
         retryable = false
         for (model in CHAT_MODELS) {
+            if (System.currentTimeMillis() - t0 > 22000) break
             try {
                 val body = JSONObject()
                     .put("system_instruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text", system))))
@@ -174,7 +177,7 @@ object GeminiService {
                     .post(body.toString().toRequestBody("application/json".toMediaType()))
                     .build()
                 var gotAny = false
-                client.newCall(req).execute().use { r ->
+                chatClient.newCall(req).execute().use { r ->
                     if (!r.isSuccessful) {
                         val txt = r.body?.string() ?: ""
                         val msg = try { JSONObject(txt).optJSONObject("error")?.optString("message") ?: "" } catch (e: Exception) { "" }
