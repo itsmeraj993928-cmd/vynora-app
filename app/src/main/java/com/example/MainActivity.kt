@@ -204,7 +204,8 @@ fun VynoraApp(viewModel: VynoraViewModel) {
                         containerColor = Color.Transparent,
                         contentWindowInsets = WindowInsets(0, 0, 0, 0),
                         bottomBar = {
-                            VynoraBottomNav(
+                            val imeOpen = WindowInsets.ime.getBottom(androidx.compose.ui.platform.LocalDensity.current) > 0
+                            if (!imeOpen) VynoraBottomNav(
                                 selectedTab = uiState.selectedTab,
                                 onTabSelected = { tab -> viewModel.selectTab(tab) },
                                 userAvatarUrl = uiState.currentUser?.avatarUrl ?: "",

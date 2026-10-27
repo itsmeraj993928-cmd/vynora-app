@@ -18,7 +18,7 @@ object GeminiService {
         .writeTimeout(30, TimeUnit.SECONDS)
         .build()
 
-    private val CHAT_MODELS = listOf("gemini-2.5-flash-lite", "gemini-2.5-flash", "gemini-flash-latest")
+    private val CHAT_MODELS = listOf("gemini-2.5-flash-lite", "gemini-2.5-flash", "gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-flash-latest")
     private val MODELS = listOf("gemini-2.5-flash", "gemini-flash-latest", "gemini-3.5-flash", "gemini-2.0-flash")
 
     /** The real key, or "" when the build only has the placeholder. */
@@ -155,6 +155,10 @@ object GeminiService {
                 "Be honest: if someone sincerely asks whether you are an AI or a human, say you are VYNORA AI. " +
                 "Do not produce harmful, sexual or hateful content, and if someone seems to be in real danger or distress, be kind and suggest talking to someone they trust or a local helpline."
         var lastError = "No answer from AI."
+        var retryable = true
+        for (round in 0 until 3) {
+        if (round > 0) { if (!retryable) break; kotlinx.coroutines.delay(1500L * round) }
+        retryable = false
         for (model in CHAT_MODELS) {
             try {
                 val body = JSONObject()
@@ -174,7 +178,9 @@ object GeminiService {
                     if (!r.isSuccessful) {
                         val txt = r.body?.string() ?: ""
                         val msg = try { JSONObject(txt).optJSONObject("error")?.optString("message") ?: "" } catch (e: Exception) { "" }
+                        if (r.code == 429 || r.code == 500 || r.code == 502 || r.code == 503 || r.code == 504) retryable = true
                         lastError = when (r.code) {
+                            503, 500, 502, 504 -> "AI is very busy right now. Please send again in a few seconds."
                             429 -> "AI quota is full for now (too many requests). Try again in a minute."
                             400 -> "AI key problem: " + msg.take(120)
                             403 -> "AI key is blocked or not allowed: " + msg.take(120)
@@ -204,7 +210,9 @@ object GeminiService {
                 }
             } catch (e: Exception) {
                 lastError = "No internet or AI is unreachable."
+                retryable = true
             }
+        }
         }
         ChatResult(null, lastError)
     }
