@@ -40,6 +40,43 @@ object GeminiService {
                 "No hashtags. Return only the caption text."
         callGeminiApi(prompt, apiKey, android.util.Base64.encodeToString(jpeg, android.util.Base64.NO_WRAP))
     }
+    /** true = adult/graphic image, false = fine, null = could not check (AI off or busy). */
+    suspend fun isUnsafeImage(jpeg: ByteArray): Boolean? = withContext(Dispatchers.IO) {
+        val apiKey = key()
+        if (apiKey.isBlank()) return@withContext null
+        val b64 = android.util.Base64.encodeToString(jpeg, android.util.Base64.NO_WRAP)
+        val prompt = "You are a strict content moderator for a social app used by teenagers. Look at this image. " +
+                "Does it show nudity, a sexual act, sexually explicit or very revealing sexual content, " +
+                "or extreme gore/violence? Answer with exactly one word: UNSAFE or SAFE."
+        for (model in listOf("gemini-2.5-flash", "gemini-2.0-flash", "gemini-flash-latest")) {
+            try {
+                val parts = JSONArray()
+                    .put(JSONObject().put("inline_data", JSONObject().put("mime_type", "image/jpeg").put("data", b64)))
+                    .put(JSONObject().put("text", prompt))
+                val body = JSONObject().put("contents", JSONArray().put(JSONObject().put("parts", parts)))
+                    .put("generationConfig", JSONObject().put("maxOutputTokens", 10).put("thinkingConfig", JSONObject().put("thinkingBudget", 0)))
+                val req = Request.Builder().url("$BASE_URL/$model:generateContent?key=$apiKey")
+                    .post(body.toString().toRequestBody("application/json".toMediaType())).build()
+                val verdict: Boolean? = client.newCall(req).execute().use { r ->
+                    if (!r.isSuccessful) return@use null
+                    val json = JSONObject(r.body?.string() ?: return@use null)
+                    // Google refusing to look at the picture is itself a strong warning sign
+                    if (json.optJSONObject("promptFeedback")?.optString("blockReason").orEmpty().isNotBlank()) return@use true
+                    val cand = json.optJSONArray("candidates")?.optJSONObject(0) ?: return@use null
+                    val text = cand.optJSONObject("content")?.optJSONArray("parts")?.optJSONObject(0)?.optString("text").orEmpty().uppercase()
+                    when {
+                        text.contains("UNSAFE") -> true
+                        text.contains("SAFE") -> false
+                        cand.optString("finishReason") == "SAFETY" -> true
+                        else -> null
+                    }
+                }
+                if (verdict != null) return@withContext verdict
+            } catch (e: Exception) { }
+        }
+        null
+    }
+
     private const val BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
 
     suspend fun generateCaption(topicOrImageDesc: String, style: String = "trendy"): String = withContext(Dispatchers.IO) {

@@ -166,6 +166,10 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
     private var likedIds: Set<String> = emptySet()
     private var likedClipIds: Set<String> = emptySet()
 
+    /** Hidden from everyone (except the owner and admins) once 3 different people reported it. */
+    private fun reportOk(count: Int, authorId: String, me: String): Boolean =
+        count < 3 || authorId == me || _uiState.value.currentUser?.role == "ADMIN"
+
     private fun blockedPrefs() = getApplication<Application>().getSharedPreferences("vynora_blocked", android.content.Context.MODE_PRIVATE)
     private fun mutedPrefs() = getApplication<Application>().getSharedPreferences("vynora_muted", android.content.Context.MODE_PRIVATE)
     private fun mutedNames(): Set<String> = try { mutedPrefs().getStringSet("names", emptySet()) ?: emptySet() } catch (e: Exception) { emptySet() }
@@ -182,7 +186,7 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
                 repository.observePosts().collect { postsList ->
                     val blocked = blockedNames() + mutedNames()
                     val visible = postsList
-                        .filter { isVisibleTo(it.visibility, it.author.id, userId) && it.author.username !in blocked }
+                        .filter { isVisibleTo(it.visibility, it.author.id, userId) && it.author.username !in blocked && reportOk(it.reportCount, it.author.id, userId) }
                         .map {
                             it.copy(
                                 isLiked = it.id in likedIds,
@@ -209,7 +213,7 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
                 repository.observeClips().collect { clipsList ->
                     val blocked = blockedNames() + mutedNames()
                     val visible = clipsList
-                        .filter { isVisibleTo(it.visibility, it.author.id, userId) && it.author.username !in blocked }
+                        .filter { isVisibleTo(it.visibility, it.author.id, userId) && it.author.username !in blocked && reportOk(it.reportCount, it.author.id, userId) }
                         .map {
                             val f = it.author.id in followingIds
                             it.copy(isLiked = it.id in likedClipIds, isFollowing = f, author = it.author.copy(isFollowing = f))
@@ -219,7 +223,7 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
             }
             launch {
                 repository.observeMoments().collect { momentsList ->
-                    val visible = momentsList.filter { isVisibleTo(it.visibility, it.author.id, userId) }
+                    val visible = momentsList.filter { isVisibleTo(it.visibility, it.author.id, userId) && reportOk(it.reportCount, it.author.id, userId) }
                     _uiState.update { it.copy(moments = visible) }
                 }
             }
@@ -903,6 +907,10 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
         if (text.isBlank()) return
         val user = _uiState.value.currentUser ?: return
 
+        if (com.example.util.ContentFilter.isBlocked(text)) {
+            showToast("This comment isn't allowed on VYNORA (adult or abusive words).")
+            return
+        }
         // Keyword filter check
         if (_uiState.value.keywordFilterActive) {
             val containsOffensive = _uiState.value.offensiveKeywords.any { text.contains(it, ignoreCase = true) }
@@ -1042,6 +1050,7 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
             targetId = target.second,
             reportedUsername = target.third,
             reporterUsername = user.username,
+            reporterId = user.id,
             reason = reason,
             details = details,
             timestamp = "Just now",
@@ -1053,7 +1062,14 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
                 activeReportTarget = null
             )
         }
-        viewModelScope.launch { repository.saveReport(newReport) }
+        val reportedKey = "${target.first}:${target.second}"
+        val seen = getApplication<Application>().getSharedPreferences("vynora_reported", android.content.Context.MODE_PRIVATE)
+        val already = seen.getBoolean(reportedKey, false)
+        if (!already) seen.edit().putBoolean(reportedKey, true).apply()
+        viewModelScope.launch {
+            repository.saveReport(newReport)
+            if (!already) repository.bumpReportCount(target.first, target.second)
+        }
         showToast("Report submitted to moderation team. Thank you for keeping VYNORA safe.")
     }
 
@@ -1496,6 +1512,10 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
             showToast("Another upload is still in progress. Please wait.")
             return
         }
+        if (com.example.util.ContentFilter.isBlocked(caption)) {
+            showToast("Your caption has words that aren't allowed on VYNORA (adult or abusive). Please change it.")
+            return
+        }
         if (!com.example.util.NetworkMonitor.online) {
             showToast("No internet. Connect to Wi-Fi or mobile data and try again.")
             return
@@ -1511,6 +1531,14 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
         val job: () -> Unit = {
             _uploadStatus.value = UploadStatus(label = label, progress = 0, sizeMb = sizeMb)
             viewModelScope.launch {
+                // safety check: AI looks at the photo (or a frame of the video) before anything is uploaded
+                val frame = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { com.example.screens.jpegForAi(app, uri, isVideo) }
+                if (frame != null && com.example.service.GeminiService.isUnsafeImage(frame) == true) {
+                    _uploadStatus.value = null
+                    lastUploadJob = null
+                    showToast("This $label looks like adult or graphic content, so it can't be posted on VYNORA.")
+                    return@launch
+                }
                 // photos are shrunk first (much less data); videos upload as they are
                 val sendUri = if (isVideo) uri else (kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { com.example.util.UploadCompress.image(app, uri) } ?: uri)
                 val res = com.example.util.CloudinaryUploader.uploadUri(
