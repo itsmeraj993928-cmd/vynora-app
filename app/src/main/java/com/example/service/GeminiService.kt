@@ -61,7 +61,11 @@ object GeminiService {
                 val req = Request.Builder().url("$BASE_URL/$model:generateContent?key=$apiKey")
                     .post(body.toString().toRequestBody("application/json".toMediaType())).build()
                 val verdict: Boolean? = client.newCall(req).execute().use { r ->
-                    if (!r.isSuccessful) return@use null
+                    if (!r.isSuccessful) {
+                        val err = r.body?.string().orEmpty().lowercase()
+                        // the AI refused the picture for safety / policy reasons
+                        return@use if (Regex("safety|blocked|prohibit|policy|sexual|explicit").containsMatchIn(err)) true else null
+                    }
                     val json = JSONObject(r.body?.string() ?: return@use null)
                     // Google refusing to look at the picture is itself a strong warning sign
                     if (json.optJSONObject("promptFeedback")?.optString("blockReason").orEmpty().isNotBlank()) return@use true

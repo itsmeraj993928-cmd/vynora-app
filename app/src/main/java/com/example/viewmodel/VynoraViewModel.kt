@@ -1538,14 +1538,14 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
                     if (unsafe == true) {
                         _uploadStatus.value = null
                         lastUploadJob = null
-                        showToast("This $label looks like adult or graphic content, so it can't be posted on VYNORA.")
+                        showToast("This $label can't be posted because it contains adult or sexually explicit content, which is against VYNORA's Community Guidelines.")
                         return@launch
                     }
                     if (unsafe == null) {
                         // could not be checked: do not let it through, ask to try again
                         _uploadStatus.value = null
                         lastUploadJob = null
-                        showToast("Safety check could not run right now. Check your internet and try again in a minute.")
+                        showToast("We couldn't complete the safety review right now. Please check your connection and try again in a minute.")
                         return@launch
                     }
                 }
