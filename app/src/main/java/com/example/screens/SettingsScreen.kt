@@ -43,7 +43,7 @@ fun SettingsScreen(
     var importDone by remember { mutableStateOf(0) }
     var importTopic by remember { mutableStateOf("mix") }
     var importCount by remember { mutableStateOf(100) }
-    var importMusic by remember { mutableStateOf(true) }
+    var importMusic by remember { mutableStateOf(false) }
     if (showImport) {
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { if (!importing) showImport = false },
