@@ -14,6 +14,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.FavoriteBorder
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -50,6 +51,7 @@ fun MomentsViewerScreen(
     pollVotes: com.example.model.PollVotes = com.example.model.PollVotes(),
     onVotePoll: (Moment, Int) -> Unit = { _, _ -> },
     onOpenProfile: (String) -> Unit = {},
+    onDeleteMoment: (Moment) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     if (moments.isEmpty()) {
@@ -68,6 +70,20 @@ fun MomentsViewerScreen(
     var currentIndex by remember { mutableStateOf(group.indexOfFirst { it.id == startMoment.id }.coerceAtLeast(0)) }
     val safeIndex = currentIndex.coerceIn(0, group.lastIndex)
     val currentMoment = group[safeIndex]
+    var showDeleteStory by remember { mutableStateOf(false) }
+    if (showDeleteStory) {
+        AlertDialog(
+            onDismissRequest = { showDeleteStory = false },
+            title = { Text("Delete this story?") },
+            text = { Text("This cannot be undone.") },
+            confirmButton = {
+                TextButton(onClick = { showDeleteStory = false; onDeleteMoment(currentMoment) }) {
+                    Text("Delete", color = Color(0xFFEF4444))
+                }
+            },
+            dismissButton = { TextButton(onClick = { showDeleteStory = false }) { Text("Cancel") } }
+        )
+    }
 
     fun goNext() {
         if (safeIndex < group.lastIndex) currentIndex = safeIndex + 1
@@ -305,6 +321,19 @@ fun MomentsViewerScreen(
                     }
                 }
 
+                if (currentMoment.author.id == currentUser.id || currentUser.role == "ADMIN") {
+                    IconButton(
+                        onClick = { showDeleteStory = true },
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Delete,
+                            contentDescription = "Delete story",
+                            tint = Color.White,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                }
                 IconButton(
                     onClick = onClose,
                     modifier = Modifier.size(32.dp)

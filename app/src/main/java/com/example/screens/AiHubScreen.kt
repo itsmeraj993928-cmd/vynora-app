@@ -3,6 +3,7 @@ package com.example.screens
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -283,7 +284,7 @@ private fun AiChatPane(isDarkMode: Boolean, onToast: (String) -> Unit, onOpenVid
             // composer pill
             Surface(
                 shape = RoundedCornerShape(28.dp), color = surface,
-                modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 6.dp, bottom = 100.dp)
+                modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 6.dp, bottom = 10.dp).imePadding()
             ) {
                 Row(modifier = Modifier.padding(start = 4.dp, end = 6.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = { onOpenVideo() }) { Icon(Icons.Outlined.Add, contentDescription = "Create video", tint = fg) }

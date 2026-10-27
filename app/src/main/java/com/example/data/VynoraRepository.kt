@@ -825,6 +825,14 @@ class VynoraRepository(
         }
     }
 
+    suspend fun deleteMoment(momentId: String) {
+        try {
+            db.collection("moments").document(momentId).delete().await()
+        } catch (e: Exception) {
+            Log.e("VynoraRepository", "Error deleting moment: ${e.message}", e)
+        }
+    }
+
     suspend fun deleteClip(clipId: String) {
         try {
             db.collection("clips").document(clipId).delete().await()
