@@ -11,7 +11,7 @@ import java.util.concurrent.TimeUnit
 
 /** Free stock videos from Pixabay (free to use). Credit to the creator is added in each caption. */
 object StockVideoService {
-    class Video(val id: Long, val link: String, val creator: String)
+    class Video(val id: Long, val link: String, val creator: String, val thumb: String = "")
 
     val TOPICS = listOf(
         "nature", "city night", "ocean waves", "mountains", "street food", "dance", "fitness", "sunset",
@@ -45,10 +45,10 @@ object StockVideoService {
                 for (i in 0 until arr.length()) {
                     val v = arr.optJSONObject(i) ?: continue
                     val vids = v.optJSONObject("videos") ?: continue
-                    val pick = vids.optJSONObject("medium") ?: vids.optJSONObject("small") ?: continue
+                    val pick = vids.optJSONObject("small") ?: vids.optJSONObject("medium") ?: vids.optJSONObject("tiny") ?: continue
                     val link = pick.optString("url")
                     if (link.isBlank()) continue
-                    val item = Video(v.optLong("id"), link, v.optString("user", "Pixabay"))
+                    val item = Video(v.optLong("id"), link, v.optString("user", "Pixabay"), pick.optString("thumbnail"))
                     if (pick.optInt("height") >= pick.optInt("width")) portrait.add(item) else other.add(item)
                 }
                 portrait + other
