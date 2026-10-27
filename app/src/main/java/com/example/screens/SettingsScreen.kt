@@ -46,7 +46,7 @@ fun SettingsScreen(
     if (showImport) {
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { if (!importing) showImport = false },
-            title = { Text("Import free reels (Pexels)") },
+            title = { Text("Import free reels (Pixabay)") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("Adds royalty-free videos as reels on your account, with credit to the creator in the caption. Keep the app open while it runs.", fontSize = 12.sp)

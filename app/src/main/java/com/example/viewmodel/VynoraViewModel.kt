@@ -2008,23 +2008,23 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
         showToast("Post deleted")
     }
 
-    /** Admin tool: fills the app with free Pexels videos as reels (topic "mix" cycles many topics). */
-    fun importPexelsReels(topic: String, count: Int, onProgress: (Int) -> Unit, onDone: (Int, String) -> Unit) {
+    /** Admin tool: fills the app with free Pixabay videos as reels (topic "mix" cycles many topics). */
+    fun importPixabayReels(topic: String, count: Int, onProgress: (Int) -> Unit, onDone: (Int, String) -> Unit) {
         val user = _uiState.value.currentUser ?: return
-        if (!com.example.util.PexelsService.isConfigured()) {
-            onDone(0, "Pexels key is missing in this build. Add the PEXELS_API_KEY secret on GitHub and rebuild.")
+        if (!com.example.util.StockVideoService.isConfigured()) {
+            onDone(0, "Pixabay key is missing in this build. Add the PIXABAY_API_KEY secret on GitHub and rebuild.")
             return
         }
         viewModelScope.launch {
             val have = _uiState.value.clips.map { it.id }.toHashSet()
-            val topics = if (topic == "mix") com.example.util.PexelsService.TOPICS else listOf(topic)
+            val topics = if (topic == "mix") com.example.util.StockVideoService.TOPICS else listOf(topic)
             var done = 0
             var page = 1
             var emptyRounds = 0
             while (done < count && emptyRounds < topics.size && page <= 6) {
                 for (t in topics) {
                     if (done >= count) break
-                    val vids = com.example.util.PexelsService.search(t, page)
+                    val vids = com.example.util.StockVideoService.search(t, page)
                     if (vids.isEmpty()) { emptyRounds++; continue }
                     for (v in vids) {
                         if (done >= count) break
@@ -2035,7 +2035,7 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
                             author = user.copy(avatarUrl = if (user.avatarUrl.startsWith("data:")) "" else user.avatarUrl, photoBase64 = ""),
                             authorId = user.id,
                             mediaUrl = v.link,
-                            caption = "#" + t.replace(" ", "") + " • Video by ${v.creator} on Pexels",
+                            caption = "#" + t.replace(" ", "") + " • Video by ${v.creator} on Pixabay",
                             musicTitle = "Original audio",
                             musicArtist = user.username,
                             createdAt = System.currentTimeMillis() - done,
@@ -2046,7 +2046,7 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
                 }
                 page++
             }
-            onDone(done, if (done == 0) "Nothing was imported. Check the Pexels key or your internet." else "")
+            onDone(done, if (done == 0) "Nothing was imported. Check the Pixabay key or your internet." else "")
         }
     }
 
