@@ -168,7 +168,12 @@ private fun AiChatPane(isDarkMode: Boolean, onToast: (String) -> Unit, onOpenVid
         scope.launch {
             val r = GeminiService.chatStream(history) { partial -> if (slot < msgs.size) msgs[slot] = AiMsg(false, partial) }
             busy = false
-            if (slot < msgs.size) msgs[slot] = AiMsg(false, r.text ?: ("⚠️ " + (r.error ?: "AI isn't available right now.")))
+            val friendly = when {
+                r.error == null -> "AI isn't available right now."
+                r.error.contains("unreachable") || r.error.contains("busy") -> "Internet slow hai ya AI abhi busy hai. Thodi der baad dobara try karo."
+                else -> r.error
+            }
+            if (slot < msgs.size) msgs[slot] = AiMsg(false, r.text ?: ("⚠️ " + friendly))
             saveCurrent()
         }
     }
@@ -274,8 +279,24 @@ private fun AiChatPane(isDarkMode: Boolean, onToast: (String) -> Unit, onOpenVid
                                     Text(m.text, color = fg, fontSize = 15.sp, lineHeight = 21.sp, modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp))
                                 }
                             }
+                        } else if (m.text == "…" && busy && i == msgs.lastIndex) {
+                            var dots by remember { mutableStateOf(1) }
+                            LaunchedEffect(Unit) { while (true) { kotlinx.coroutines.delay(400); dots = dots % 3 + 1 } }
+                            Text("VYNORA is typing" + ".".repeat(dots), color = sub, fontSize = 14.sp, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic, modifier = Modifier.fillMaxWidth())
                         } else {
-                            Text(m.text, color = fg, fontSize = 15.sp, lineHeight = 23.sp, modifier = Modifier.fillMaxWidth())
+                            Column(modifier = Modifier.fillMaxWidth()) {
+                                Text(m.text, color = fg, fontSize = 15.sp, lineHeight = 23.sp, modifier = Modifier.fillMaxWidth())
+                                if (m.text.startsWith("⚠️") && !busy && i == msgs.lastIndex && i >= 1) {
+                                    Text(
+                                        "↻ Retry", color = VynoraNeonPink, fontWeight = FontWeight.Bold, fontSize = 14.sp,
+                                        modifier = Modifier.padding(top = 6.dp).clip(RoundedCornerShape(8.dp)).clickable {
+                                            val lastUser = msgs[i - 1].text
+                                            msgs.removeAt(i); msgs.removeAt(i - 1)
+                                            input = lastUser; send()
+                                        }.padding(vertical = 4.dp, horizontal = 2.dp)
+                                    )
+                                }
+                            }
                         }
                     }
                 }
