@@ -27,6 +27,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withTimeoutOrNull
 
@@ -2026,23 +2028,30 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
                     if (done >= count) break
                     val vids = com.example.util.StockVideoService.search(t, page)
                     if (vids.isEmpty()) { emptyRounds++; continue }
-                    for (v in vids) {
+                    val fresh = vids.filter { "px_${it.id}" !in have }.take(count - done)
+                    for (chunk in fresh.chunked(3)) {
                         if (done >= count) break
-                        val id = "px_${v.id}"
-                        if (id in have) continue
-                        val clip = Clip(
-                            id = id,
-                            author = user.copy(avatarUrl = if (user.avatarUrl.startsWith("data:")) "" else user.avatarUrl, photoBase64 = ""),
-                            authorId = user.id,
-                            mediaUrl = v.link,
-                            thumbnailUrl = v.thumb,
-                            caption = "#" + t.replace(" ", "") + " • Video by ${v.creator} on Pixabay",
-                            musicTitle = "Original audio",
-                            musicArtist = user.username,
-                            createdAt = System.currentTimeMillis() - done,
-                            visibility = "PUBLIC"
-                        )
-                        if (repository.saveClip(clip) == null) { done++; have.add(id); onProgress(done) }
+                        val results = chunk.map { v ->
+                            async(kotlinx.coroutines.Dispatchers.IO) { v to com.example.util.CloudinaryUploader.uploadRemoteUrl(v.link).getOrNull() }
+                        }.awaitAll()
+                        for ((v, up) in results) {
+                            if (up == null || done >= count) continue
+                            val id = "px_${v.id}"
+                            val clip = Clip(
+                                id = id,
+                                author = user.copy(avatarUrl = if (user.avatarUrl.startsWith("data:")) "" else user.avatarUrl, photoBase64 = ""),
+                                authorId = user.id,
+                                mediaUrl = up.secureUrl,
+                                cloudinaryPublicId = up.publicId,
+                                thumbnailUrl = com.example.util.reelPoster(up.secureUrl, ""),
+                                caption = "#" + t.replace(" ", "") + " • Video by ${v.creator} on Pixabay",
+                                musicTitle = "Original audio",
+                                musicArtist = user.username,
+                                createdAt = System.currentTimeMillis() - done,
+                                visibility = "PUBLIC"
+                            )
+                            if (repository.saveClip(clip) == null) { done++; have.add(id); onProgress(done) }
+                        }
                     }
                 }
                 page++

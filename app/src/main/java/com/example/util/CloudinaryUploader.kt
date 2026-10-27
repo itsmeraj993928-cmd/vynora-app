@@ -235,6 +235,33 @@ object CloudinaryUploader {
         Result.failure(lastException ?: IOException("Upload failed after $maxRetries retries"))
     }
 
+    /** Cloudinary downloads the file from [remoteUrl] itself, so nothing passes through the phone. */
+    suspend fun uploadRemoteUrl(remoteUrl: String): Result<CloudinaryUploadResult> = withContext(Dispatchers.IO) {
+        try {
+            val body = MultipartBody.Builder()
+                .setType(MultipartBody.FORM)
+                .addFormDataPart("upload_preset", CloudinaryConfig.UPLOAD_PRESET)
+                .addFormDataPart("file", remoteUrl)
+                .build()
+            val request = Request.Builder().url(CloudinaryConfig.VIDEO_UPLOAD_URL).post(body).build()
+            val response = client.newCall(request).execute()
+            val text = response.use { it.body?.string() ?: "" }
+            if (!response.isSuccessful) return@withContext Result.failure(IOException("Upload failed (${response.code}): ${text.take(120)}"))
+            val json = JSONObject(text)
+            Result.success(
+                CloudinaryUploadResult(
+                    secureUrl = json.getString("secure_url"),
+                    publicId = json.optString("public_id", ""),
+                    format = json.optString("format", ""),
+                    width = json.optInt("width", 0),
+                    height = json.optInt("height", 0),
+                    bytes = json.optLong("bytes", 0L),
+                    resourceType = json.optString("resource_type", "video")
+                )
+            )
+        } catch (e: Exception) { Result.failure(e) }
+    }
+
     /**
      * Uploads a Bitmap (e.g. from camera capture).
      */

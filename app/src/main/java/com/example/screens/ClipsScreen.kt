@@ -101,6 +101,7 @@ fun ClipsScreen(
         } else {
             VerticalPager(
                 state = pagerState,
+                beyondViewportPageCount = if (com.example.util.DataSaver.enabled) 0 else 1,
                 modifier = Modifier.fillMaxSize()
             ) { page ->
                 val clip = clips[page]
@@ -249,7 +250,7 @@ private fun ClipItemView(
             shouldPlay = isPlaying && isCurrentPage,
             isMuted = isMuted,
             musicUrl = clip.musicUrl,
-            posterUrl = clip.thumbnailUrl,
+            posterUrl = com.example.util.reelPoster(clip.mediaUrl, clip.thumbnailUrl),
             modifier = Modifier.fillMaxSize()
         )
 
@@ -588,6 +589,11 @@ private fun ClipVideoPlayer(
     var hasError by remember(videoUrl) { mutableStateOf(false) }
     var isReady by remember(videoUrl) { mutableStateOf(false) }
     var player by remember(videoUrl) { mutableStateOf<android.media.MediaPlayer?>(null) }
+    // keep the still picture on screen until the video has really started, so scrolling never flashes black
+    var showPoster by remember(videoUrl) { mutableStateOf(true) }
+    LaunchedEffect(isReady, shouldPlay) {
+        if (isReady && shouldPlay) { kotlinx.coroutines.delay(300); showPoster = false }
+    }
 
     Box(modifier = modifier.background(Color.Black), contentAlignment = Alignment.Center) {
         AndroidView(
@@ -621,7 +627,7 @@ private fun ClipVideoPlayer(
                 try { vv.stopPlayback() } catch (_: Throwable) { }
             }
         )
-        if (!isReady && !hasError && posterUrl.isNotBlank()) {
+        if (showPoster && !hasError && posterUrl.isNotBlank()) {
             coil.compose.AsyncImage(model = posterUrl, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = androidx.compose.ui.layout.ContentScale.Fit)
         }
         if (hasError) {
