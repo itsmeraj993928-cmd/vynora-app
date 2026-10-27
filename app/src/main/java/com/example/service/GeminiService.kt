@@ -2,6 +2,7 @@ package com.example.service
 
 import com.example.BuildConfig
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -155,14 +156,20 @@ object GeminiService {
                 "Be honest: if someone sincerely asks whether you are an AI or a human, say you are VYNORA AI. " +
                 "Do not produce harmful, sexual or hateful content, and if someone seems to be in real danger or distress, be kind and suggest talking to someone they trust or a local helpline."
         var lastError = "No answer from AI."
+        // Backup AI runs at the same time as Gemini, so the wait is the faster of the two, not the sum
+        val backupDef = async(Dispatchers.IO) { backupChat(history, system) }
         var retryable = true
         val t0 = System.currentTimeMillis()
-        val chatClient = client.newBuilder().connectTimeout(15, TimeUnit.SECONDS).readTimeout(30, TimeUnit.SECONDS).build()
-        for (round in 0 until 2) {
+        val chatClient = client.newBuilder().connectTimeout(10, TimeUnit.SECONDS).readTimeout(15, TimeUnit.SECONDS).build()
+        for (round in 0 until 1) {
         if (round > 0) { if (!retryable) break; kotlinx.coroutines.delay(1000L) }
         retryable = false
         for (model in CHAT_MODELS) {
-            if (System.currentTimeMillis() - t0 > 35000) break
+            if (System.currentTimeMillis() - t0 > 20000) break
+            if (backupDef.isCompleted) {
+                val b = backupDef.await()
+                if (b != null) { withContext(Dispatchers.Main) { onPartial(b) }; return@withContext ChatResult(b, null) }
+            }
             try {
                 val body = JSONObject()
                     .put("system_instruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text", system))))
@@ -218,7 +225,7 @@ object GeminiService {
         }
         }
         // Backup AI (no key needed) when Gemini is busy/blocked/unreachable
-        val backup = backupChat(history, system)
+        val backup = backupDef.await()
         if (backup != null) {
             withContext(Dispatchers.Main) { onPartial(backup) }
             return@withContext ChatResult(backup, null)
