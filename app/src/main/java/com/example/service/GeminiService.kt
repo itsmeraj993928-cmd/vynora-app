@@ -43,7 +43,11 @@ object GeminiService {
     /** true = adult/graphic image, false = fine, null = could not check (AI off or busy). */
     fun canCheckImages(): Boolean = key().isNotBlank()
 
+    /** Short reason codes of the last check that could not run, e.g. "G429 P500" (for troubleshooting). */
+    @Volatile var lastCheckNote: String = ""
+
     suspend fun isUnsafeImage(jpeg: ByteArray): Boolean? = withContext(Dispatchers.IO) {
+        lastCheckNote = ""
         val apiKey = key()
         if (apiKey.isBlank()) return@withContext null
         val b64 = android.util.Base64.encodeToString(jpeg, android.util.Base64.NO_WRAP)
@@ -53,20 +57,22 @@ object GeminiService {
                 "When in doubt, say UNSAFE. Answer with exactly one word: UNSAFE or SAFE."
         for (round in 0 until 2) {
         if (round > 0) kotlinx.coroutines.delay(1500L)
-        for (model in listOf("gemini-2.5-flash", "gemini-2.0-flash", "gemini-2.5-flash-lite")) {
+        for (model in listOf("gemini-2.5-flash-lite", "gemini-2.5-flash", "gemini-flash-lite-latest", "gemini-2.0-flash")) {
             try {
                 val parts = JSONArray()
                     .put(JSONObject().put("inline_data", JSONObject().put("mime_type", "image/jpeg").put("data", b64)))
                     .put(JSONObject().put("text", prompt))
                 val body = JSONObject().put("contents", JSONArray().put(JSONObject().put("parts", parts)))
-                    .put("generationConfig", JSONObject().put("maxOutputTokens", 10).put("thinkingConfig", JSONObject().put("thinkingBudget", 0)))
+                    .put("generationConfig", JSONObject().put("maxOutputTokens", 16).also { if (model.startsWith("gemini-2.5")) it.put("thinkingConfig", JSONObject().put("thinkingBudget", 0)) })
                 val req = Request.Builder().url("$BASE_URL/$model:generateContent?key=$apiKey")
                     .post(body.toString().toRequestBody("application/json".toMediaType())).build()
                 val verdict: Boolean? = client.newBuilder().connectTimeout(8, TimeUnit.SECONDS).readTimeout(12, TimeUnit.SECONDS).build().newCall(req).execute().use { r ->
                     if (!r.isSuccessful) {
                         val err = r.body?.string().orEmpty().lowercase()
                         // the AI refused the picture for safety / policy reasons
-                        return@use if (Regex("safety|blocked|prohibit|policy|sexual|explicit").containsMatchIn(err)) true else null
+                        if (Regex("safety|blocked|prohibit|sexual|explicit").containsMatchIn(err) && r.code == 400) return@use true
+                        lastCheckNote = "G" + r.code
+                        return@use null
                     }
                     val json = JSONObject(r.body?.string() ?: return@use null)
                     // Google refusing to look at the picture is itself a strong warning sign
@@ -82,7 +88,7 @@ object GeminiService {
                     }
                 }
                 if (verdict != null) return@withContext verdict
-            } catch (e: Exception) { }
+            } catch (e: Exception) { lastCheckNote = "G" + e.javaClass.simpleName.take(12) }
         }
         }
         // Gemini could not answer (busy / quota): ask a second free AI so uploads do not stop
@@ -103,7 +109,9 @@ object GeminiService {
                 val txt = r.body?.string().orEmpty()
                 if (!r.isSuccessful) {
                     // a content-policy refusal from the AI counts as unsafe
-                    return if (Regex("content.?(filter|policy)|safety|sexual|explicit").containsMatchIn(txt.lowercase())) true else null
+                    if (Regex("content.?(filter|policy)|safety|sexual|explicit").containsMatchIn(txt.lowercase())) return true
+                    lastCheckNote = lastCheckNote + " P" + r.code
+                    return null
                 }
                 val ans = JSONObject(txt).optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("message")?.optString("content").orEmpty().uppercase()
                 when {
