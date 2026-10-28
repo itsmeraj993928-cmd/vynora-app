@@ -448,6 +448,23 @@ class VynoraRepository(
                 }
                 val posts = snapshot?.toObjects(Post::class.java) ?: emptyList()
                 trySend(posts)
+                // posts keep only a small copy of the creator: fill in the real photo and name
+                launch {
+                    val enriched = posts.map { p ->
+                        if (p.author.id.isBlank()) p
+                        else {
+                            val full = loadUserCached(p.author.id)
+                            p.copy(
+                                author = p.author.copy(
+                                    username = full.username.ifBlank { p.author.username },
+                                    fullName = full.fullName.ifBlank { p.author.fullName },
+                                    avatarUrl = full.avatarUrl.ifBlank { p.author.avatarUrl }
+                                )
+                            )
+                        }
+                    }
+                    trySend(enriched)
+                }
             }
         awaitClose { listener.remove() }
     }
@@ -765,17 +782,23 @@ class VynoraRepository(
         return result
     }
 
-    suspend fun savePost(post: Post) {
+    /** Returns null on success, or a short error text. */
+    suspend fun savePost(post: Post): String? {
         try {
-            db.collection("posts").document(post.id).set(post).await()
-            if (post.author.id.isNotBlank()) {
-                db.collection("users").document(post.author.id).update(
-                    "postsCount", FieldValue.increment(1)
-                ).await()
-            }
+            // the creator copy inside a post must stay small (a photo stored as text can exceed Firestore's 1 MB limit)
+            db.collection("posts").document(post.id).set(post.copy(author = slimUser(post.author))).await()
         } catch (e: Exception) {
             Log.e("VynoraRepository", "Error saving post to Firestore: ${e.message}", e)
+            return (e.message ?: "unknown error").take(140)
         }
+        try {
+            if (post.author.id.isNotBlank()) {
+                db.collection("users").document(post.author.id).update("postsCount", FieldValue.increment(1)).await()
+            }
+        } catch (e: Exception) {
+            Log.w("VynoraRepository", "postsCount update failed: ${e.message}")
+        }
+        return null
     }
 
     /** Returns null on success, or a short reason when saving failed. */
