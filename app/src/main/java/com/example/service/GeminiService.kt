@@ -51,6 +51,8 @@ object GeminiService {
                 "Does it show nudity or partial nudity, a sexual act, sexually explicit or suggestive content, " +
                 "lingerie/underwear-only or very revealing sexual poses, or extreme gore/violence? " +
                 "When in doubt, say UNSAFE. Answer with exactly one word: UNSAFE or SAFE."
+        for (round in 0 until 2) {
+        if (round > 0) kotlinx.coroutines.delay(1500L)
         for (model in listOf("gemini-2.5-flash", "gemini-2.0-flash", "gemini-2.5-flash-lite")) {
             try {
                 val parts = JSONArray()
@@ -82,7 +84,35 @@ object GeminiService {
                 if (verdict != null) return@withContext verdict
             } catch (e: Exception) { }
         }
-        null
+        }
+        // Gemini could not answer (busy / quota): ask a second free AI so uploads do not stop
+        backupImageVerdict(prompt, b64)
+    }
+
+    private fun backupImageVerdict(prompt: String, b64: String): Boolean? {
+        return try {
+            val content = JSONArray()
+                .put(JSONObject().put("type", "text").put("text", prompt))
+                .put(JSONObject().put("type", "image_url").put("image_url", JSONObject().put("url", "data:image/jpeg;base64,$b64")))
+            val body = JSONObject().put("model", "openai").put("max_tokens", 10)
+                .put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", content)))
+            val req = Request.Builder().url("https://text.pollinations.ai/openai")
+                .post(body.toString().toRequestBody("application/json".toMediaType())).build()
+            val c = client.newBuilder().connectTimeout(10, TimeUnit.SECONDS).readTimeout(25, TimeUnit.SECONDS).build()
+            c.newCall(req).execute().use { r ->
+                val txt = r.body?.string().orEmpty()
+                if (!r.isSuccessful) {
+                    // a content-policy refusal from the AI counts as unsafe
+                    return if (Regex("content.?(filter|policy)|safety|sexual|explicit").containsMatchIn(txt.lowercase())) true else null
+                }
+                val ans = JSONObject(txt).optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("message")?.optString("content").orEmpty().uppercase()
+                when {
+                    ans.contains("UNSAFE") -> true
+                    ans.contains("SAFE") -> false
+                    else -> null
+                }
+            }
+        } catch (e: Exception) { null }
     }
 
     private const val BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
