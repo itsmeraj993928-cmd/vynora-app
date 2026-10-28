@@ -74,8 +74,10 @@ fun HomeScreen(
     onFollowAuthor: (id: String, username: String) -> Unit = { _, _ -> },
     isRefreshing: Boolean = false,
     onRefresh: () -> Unit = {},
-    onSaveNote: (text: String, song: com.example.util.MusicTrack?) -> Unit = { _, _ -> }
+    onSaveNote: (text: String, song: com.example.util.MusicTrack?) -> Unit = { _, _ -> },
+    onNotInterested: (String) -> Unit = {}
 ) {
+    var followingOnly by remember { mutableStateOf(false) }
     var showNoteDialog by remember { mutableStateOf(false) }
     if (showNoteDialog) {
         NoteEditDialog(
@@ -121,9 +123,13 @@ fun HomeScreen(
             )
         }
     ) { innerPadding ->
-    val feed = remember(posts, clips) {
-        (posts.map { FeedItem.P(it) as FeedItem } + clips.map { FeedItem.C(it) })
-            .sortedByDescending { it.createdAt }
+    val feed = remember(posts, clips, followingOnly) {
+        val ps = if (followingOnly) posts.filter { it.author.isFollowing || it.author.id == currentUser.id } else posts
+        val cs = if (followingOnly) clips.filter { it.isFollowing || it.author.id == currentUser.id } else clips
+        // keep the algorithm's order inside posts and inside reels, then interleave by relative rank
+        val a = ps.mapIndexed { i, p -> (i + 0.25f) / ps.size.coerceAtLeast(1) to (FeedItem.P(p) as FeedItem) }
+        val b = cs.mapIndexed { i, c -> (i + 0.75f) / cs.size.coerceAtLeast(1) to (FeedItem.C(c) as FeedItem) }
+        (a + b).sortedBy { it.first }.map { it.second }
     }
         PullToRefreshBox(
             isRefreshing = isRefreshing,
@@ -157,6 +163,14 @@ fun HomeScreen(
                     isDarkMode = isDarkMode,
                     onPostNow = onCreateMoment
                 )
+            }
+
+            // --- 1c. For You / Following ---
+            item {
+                Row(modifier = Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(selected = !followingOnly, onClick = { followingOnly = false }, label = { Text("For You") })
+                    FilterChip(selected = followingOnly, onClick = { followingOnly = true }, label = { Text("Following") })
+                }
             }
 
             // --- 2. Posts Feed ---
@@ -289,6 +303,7 @@ fun HomeScreen(
                             isOwner = currentUser.id.isNotBlank() && post.author.id == currentUser.id,
                             onDeleteClick = { postToDelete = post.id },
                             onAuthorClick = { onAuthorClick(post.author.username) },
+                            onNotInterested = { onNotInterested(post.id) },
                             modifier = Modifier.padding(horizontal = 14.dp)
                         )
                         if (post.author.id.isNotBlank() && post.author.id != currentUser.id && !post.author.isOfficial && !post.author.isFollowing) {

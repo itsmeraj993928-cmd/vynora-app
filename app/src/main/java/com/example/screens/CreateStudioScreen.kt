@@ -201,6 +201,8 @@ fun CreateStudioScreen(
     val sub = if (isDarkMode) Color(0xFF94A3B8) else Color(0xFF64748B)
 
     var showFilterStrip by remember { mutableStateOf(false) }
+    var showDrafts by remember { mutableStateOf(false) }
+    var drafts by remember { mutableStateOf(com.example.util.DraftStore.list(context)) }
     BackHandler(enabled = step > 0) {
         step = when (step) {
             3 -> 0
@@ -321,6 +323,42 @@ fun CreateStudioScreen(
             isDarkMode = isDarkMode,
             onPick = { selectedSong = it; showMusicPicker = false },
             onDismiss = { showMusicPicker = false }
+        )
+    }
+
+    if (showDrafts) {
+        AlertDialog(
+            onDismissRequest = { showDrafts = false },
+            title = { Text("Drafts") },
+            text = {
+                if (drafts.isEmpty()) Text("No drafts yet. Tap \"Save draft\" while creating a post.")
+                else Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    drafts.forEach { d ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable {
+                                showDrafts = false
+                                mode = when (d.mode) { "MOMENT" -> CreateMode.MOMENT; "CLIP" -> CreateMode.CLIP; else -> CreateMode.POST }
+                                pickItem(Uri.parse(d.uri), d.isVideo, 0L)
+                                caption = d.caption
+                                selectedFilter = d.filter
+                            }.padding(6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            GalleryThumb(Uri.parse(d.uri), d.isVideo, Modifier.size(52.dp).clip(RoundedCornerShape(8.dp)), px = 160)
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(d.mode.lowercase().replaceFirstChar { it.uppercase() }, fontWeight = FontWeight.SemiBold)
+                                Text(d.caption.ifBlank { "No caption" }, maxLines = 1, fontSize = 12.sp)
+                            }
+                            TextButton(onClick = {
+                                com.example.util.DraftStore.remove(context, d.uri)
+                                drafts = com.example.util.DraftStore.list(context)
+                            }) { Text("Delete", color = Color(0xFFEF4444)) }
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { showDrafts = false }) { Text("Close") } }
         )
     }
 
@@ -476,6 +514,7 @@ fun CreateStudioScreen(
                         }
                     }
                     Tool("Camera", Icons.Outlined.PhotoCamera) { openCamera() }
+                    if (drafts.isNotEmpty()) Tool("Drafts (${drafts.size})", Icons.Outlined.Edit) { showDrafts = true }
                     if (mode != CreateMode.CLIP) {
                         Tool("Aa Create", Icons.Outlined.TextFields) { showTextStory = true }
                         Tool("Layout", Icons.Outlined.GridView) {
@@ -714,6 +753,18 @@ fun CreateStudioScreen(
                     }
                     Spacer(modifier = Modifier.height(12.dp))
                 }
+                TextButton(
+                    onClick = {
+                        val p = picked
+                        if (p != null) {
+                            com.example.util.DraftStore.save(context, com.example.util.DraftStore.Draft(
+                                p.uri.toString(), p.isVideo, mode.name, caption, selectedFilter, System.currentTimeMillis()))
+                            drafts = com.example.util.DraftStore.list(context)
+                            onToast("Saved to drafts")
+                        }
+                    },
+                    modifier = Modifier.align(Alignment.CenterHorizontally)
+                ) { Text("Save draft", color = sub) }
                 Button(
                     onClick = { doPublish() },
                     modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 96.dp).height(50.dp).testTag("publish_button"),

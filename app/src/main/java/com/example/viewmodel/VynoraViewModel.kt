@@ -225,6 +225,8 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
     private val pendingChatParticipants = HashMap<String, User>()
     private fun blockedNames(): Set<String> = try { blockedPrefs().getStringSet("names", emptySet()) ?: emptySet() } catch (e: Exception) { emptySet() }
 
+    private val feedSeed: Int = kotlin.random.Random.nextInt(1000)
+
     private fun startDataObservations(userId: String) {
         observeJob?.cancel()
         likedIds = emptySet()
@@ -235,7 +237,7 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
                 repository.observePosts().collect { postsList ->
                     val blocked = blockedNames() + mutedNames()
                     val visible = postsList
-                        .filter { isVisibleTo(it.visibility, it.author.id, userId) && it.author.username !in blocked && reportOk(it.reportCount, it.author.id, userId) }
+                        .filter { isVisibleTo(it.visibility, it.author.id, userId) && it.author.username !in blocked && it.id !in hiddenPostIds() && reportOk(it.reportCount, it.author.id, userId) }
                         .map {
                             it.copy(
                                 isLiked = it.id in likedIds,
@@ -243,7 +245,7 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
                                 comments = it.comments.sortedByDescending { c -> c.createdAt }
                             )
                         }
-                    _uiState.update { it.copy(posts = visible) }
+                    _uiState.update { it.copy(posts = com.example.util.FeedRanker.rankPosts(visible, followingIds, likedIds, feedSeed)) }
                 }
             }
             launch {
@@ -267,7 +269,7 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
                             val f = it.author.id in followingIds
                             it.copy(isLiked = it.id in likedClipIds, isFollowing = f, author = it.author.copy(isFollowing = f))
                         }
-                    _uiState.update { it.copy(clips = visible) }
+                    _uiState.update { it.copy(clips = com.example.util.FeedRanker.rankClips(visible, followingIds, likedClipIds, feedSeed)) }
                 }
             }
             launch {
@@ -1374,6 +1376,15 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
         logCall(c, status)
         clearCallLocally()
         viewModelScope.launch { repository.updateCallStatus(c.id, status) }
+    }
+
+    private fun hiddenPrefs() = getApplication<Application>().getSharedPreferences("vynora_hidden", android.content.Context.MODE_PRIVATE)
+    private fun hiddenPostIds(): Set<String> = try { hiddenPrefs().getStringSet("ids", emptySet()) ?: emptySet() } catch (e: Exception) { emptySet() }
+
+    fun notInterested(postId: String) {
+        try { hiddenPrefs().edit().putStringSet("ids", hiddenPostIds() + postId).apply() } catch (e: Exception) { }
+        _uiState.update { st -> st.copy(posts = st.posts.filterNot { it.id == postId }) }
+        showToast("Okay, we will show fewer posts like this")
     }
 
     fun isMutedUser(username: String): Boolean = username in mutedNames()
