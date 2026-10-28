@@ -1300,6 +1300,49 @@ class VynoraRepository(
         }
     }
 
+    /** Number of reports waiting for review (admin only; other users simply get an error and nothing). */
+    fun observePendingReportCount(): Flow<Int> = callbackFlow {
+        val l = db.collection("reports").whereEqualTo("status", "PENDING").addSnapshotListener { snap, err ->
+            if (err != null) return@addSnapshotListener
+            trySend(snap?.size() ?: 0)
+        }
+        awaitClose { l.remove() }
+    }
+
+    /** Popular accounts the user does not follow yet. */
+    suspend fun getSuggestedUsers(excludeIds: Set<String>, limit: Int = 12): List<User> {
+        return try {
+            db.collection("users").orderBy("followersCount", Query.Direction.DESCENDING).limit(60).get().await()
+                .toObjects(User::class.java)
+                .filter { it.id.isNotBlank() && it.id !in excludeIds && it.username.isNotBlank() && !it.isBanned }
+                .take(limit)
+        } catch (e: Exception) {
+            Log.w("VynoraRepo", "getSuggestedUsers failed", e)
+            emptyList()
+        }
+    }
+
+    /** Removes the user's posts, reels, stories and profile document. The sign-in account itself is deleted by the caller. */
+    suspend fun deleteAccountData(uid: String): Boolean {
+        return try {
+            for (col in listOf("posts", "clips", "moments")) {
+                for (field in listOf("authorId", "author.id")) {
+                    val docs = db.collection(col).whereEqualTo(field, uid).get().await().documents
+                    for (chunk in docs.chunked(400)) {
+                        val batch = db.batch()
+                        chunk.forEach { batch.delete(it.reference) }
+                        batch.commit().await()
+                    }
+                }
+            }
+            db.collection("users").document(uid).delete().await()
+            true
+        } catch (e: Exception) {
+            Log.e("VynoraRepo", "deleteAccountData failed", e)
+            false
+        }
+    }
+
     suspend fun saveReport(report: ReportItem) {
         try {
             db.collection("reports").document(report.id).set(report).await()

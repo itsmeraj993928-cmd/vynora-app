@@ -143,6 +143,24 @@ fun VynoraApp(viewModel: VynoraViewModel) {
             }
         }
     }
+    // Keep instant alerts running (also when the app is closed)
+    LaunchedEffect(uiState.isLoggedIn) {
+        if (uiState.isLoggedIn) com.example.util.AlertsService.start(hostContext)
+        else com.example.util.AlertsService.stop(hostContext)
+    }
+    // One-time "follow a few creators" suggestion for accounts that follow almost nobody
+    val suggested by viewModel.suggestedUsers.collectAsStateWithLifecycle()
+    LaunchedEffect(uiState.isLoggedIn, uiState.currentUser?.id) {
+        if (uiState.isLoggedIn && uiState.currentUser != null) viewModel.loadSuggestedIfNeeded()
+    }
+    if (suggested.isNotEmpty() && uiState.currentScreen is ScreenDestination.Main) {
+        com.example.screens.SuggestedCreatorsDialog(
+            users = suggested,
+            isDarkMode = uiState.isDarkMode,
+            onFollow = { u -> viewModel.toggleFollowById(u.id, u.username) },
+            onDismiss = { viewModel.dismissSuggested() }
+        )
+    }
     // Notifications (Android 13+): needed to show "incoming call" when the app is in the background.
     val notifPermissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
@@ -523,6 +541,9 @@ fun VynoraApp(viewModel: VynoraViewModel) {
                     onOpenLegalDoc = { doc -> viewModel.navigateTo(ScreenDestination.Legal(doc)) },
                     canImportReels = uiState.currentUser?.let { it.role == "ADMIN" || it.email.equals("itsmeraj993928@gmail.com", ignoreCase = true) } == true,
                     onImportReels = { topic, n, music, prog, done -> viewModel.importPixabayReels(topic, n, music, prog, done) },
+                    privateAccount = uiState.currentUser?.isPrivateAccount == true,
+                    onPrivateChange = { viewModel.setPrivateAccount(it) },
+                    onDeleteAccount = { viewModel.deleteMyAccount() },
                     onBack = { viewModel.navigateBack() },
                     onToast = { msg ->
                         if (msg.contains("Logged out", ignoreCase = true)) {
