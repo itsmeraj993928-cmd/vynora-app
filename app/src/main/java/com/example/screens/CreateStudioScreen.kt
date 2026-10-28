@@ -29,6 +29,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
@@ -199,7 +200,14 @@ fun CreateStudioScreen(
     val fg = if (isDarkMode) Color.White else Color(0xFF0F172A)
     val sub = if (isDarkMode) Color(0xFF94A3B8) else Color(0xFF64748B)
 
-    BackHandler(enabled = step > 0) { step -= 1 }
+    var showFilterStrip by remember { mutableStateOf(false) }
+    BackHandler(enabled = step > 0) {
+        step = when (step) {
+            3 -> 0
+            1 -> if (mode == CreateMode.CLIP) 0 else 3
+            else -> step - 1
+        }
+    }
 
     // ---- Gallery access ----
     val perms: Array<String> = if (Build.VERSION.SDK_INT >= 33)
@@ -245,7 +253,8 @@ fun CreateStudioScreen(
         if (bytes > 100L * 1024L * 1024L) { onToast("File is too large. Maximum size is 100 MB"); return }
         picked = GalleryItem(uri, isVideo, dur, 0L)
         pickedSizeMb = if (bytes > 0L) bytes / 1048576f else 0f
-        step = 1
+        showFilterStrip = false
+        step = if (mode == CreateMode.CLIP) 1 else 3
     }
 
     val browseLauncher = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri: Uri? ->
@@ -383,6 +392,37 @@ fun CreateStudioScreen(
         )
     }
 
+    fun doPublish() {
+                        val p = picked
+                        if (p == null) { onToast("Please select a photo or video first"); return }
+                        if (!confirmSafeContent) { onToast("Please confirm your content follows the rules (no 18+ / nudity) ✅"); return }
+                        val kindName = when (mode) { CreateMode.MOMENT -> "MOMENT"; CreateMode.CLIP -> "CLIP"; else -> "POST" }
+                        val finalCaption = caption.trim()
+                        val finalTags = Regex("#[\\p{L}\\p{N}_]+").findAll(finalCaption).map { it.value }.distinct().toList()
+                        val flags = buildSet {
+                            if (hideLikes) add("HIDE_LIKES")
+                            if (hideShares) add("HIDE_SHARES")
+                            if (commentsOff) add("NO_COMMENTS")
+                            if (mode == CreateMode.MOMENT && pollQ.isNotBlank()) {
+                                add("POLL:" + pollQ.trim().replace("|", " ") + "|" + pollA.trim().replace("|", " ") + "|" + pollB.trim().replace("|", " "))
+                            }
+                        }
+                        val uploadUri = if (!p.isVideo && mode != CreateMode.CLIP && selectedFilter != "Original")
+                            (bakeFilter(context, p.uri, selectedFilter) ?: p.uri) else p.uri
+                        onStartBackgroundUpload(
+                            kindName, uploadUri, finalCaption, finalTags, location.ifBlank { null },
+                            selectedFilter, visibility,
+                            if (mode == CreateMode.MOMENT || mode == CreateMode.CLIP) (selectedSong?.pack() ?: "Original audio") else "Original audio",
+                            isCloseFriends, flags
+                        )
+                        selectedSong = null
+                        pollQ = ""
+                        picked = null; pickedSizeMb = 0f; caption = ""; location = ""; selectedFilter = "Original"
+                        hideLikes = false; hideShares = false; commentsOff = false; confirmSafeContent = false
+                        step = 0
+                        onToast("Upload started. You can keep using the app.")
+    }
+
     Box(modifier = modifier.fillMaxSize().background(screenBg).windowInsetsPadding(WindowInsets.statusBars)) {
         when (step) {
             // ------------------------------------------------------------ PICK
@@ -503,7 +543,7 @@ fun CreateStudioScreen(
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    IconButton(onClick = { step = 0 }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = fg) }
+                    IconButton(onClick = { step = if (mode == CreateMode.CLIP) 0 else 3 }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = fg) }
                     Spacer(modifier = Modifier.weight(1f))
                     Text(title, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = fg)
                     Spacer(modifier = Modifier.weight(1f))
@@ -675,40 +715,180 @@ fun CreateStudioScreen(
                     Spacer(modifier = Modifier.height(12.dp))
                 }
                 Button(
-                    onClick = {
-                        val p = picked
-                        if (p == null) { onToast("Please select a photo or video first"); return@Button }
-                        if (!confirmSafeContent) { onToast("Please confirm your content follows the rules (no 18+ / nudity) ✅"); return@Button }
-                        val kindName = when (mode) { CreateMode.MOMENT -> "MOMENT"; CreateMode.CLIP -> "CLIP"; else -> "POST" }
-                        val finalCaption = caption.trim()
-                        val finalTags = Regex("#[\\p{L}\\p{N}_]+").findAll(finalCaption).map { it.value }.distinct().toList()
-                        val flags = buildSet {
-                            if (hideLikes) add("HIDE_LIKES")
-                            if (hideShares) add("HIDE_SHARES")
-                            if (commentsOff) add("NO_COMMENTS")
-                            if (mode == CreateMode.MOMENT && pollQ.isNotBlank()) {
-                                add("POLL:" + pollQ.trim().replace("|", " ") + "|" + pollA.trim().replace("|", " ") + "|" + pollB.trim().replace("|", " "))
-                            }
-                        }
-                        val uploadUri = if (!p.isVideo && mode != CreateMode.CLIP && selectedFilter != "Original")
-                            (bakeFilter(context, p.uri, selectedFilter) ?: p.uri) else p.uri
-                        onStartBackgroundUpload(
-                            kindName, uploadUri, finalCaption, finalTags, location.ifBlank { null },
-                            selectedFilter, visibility,
-                            if (mode == CreateMode.MOMENT || mode == CreateMode.CLIP) (selectedSong?.pack() ?: "Original audio") else "Original audio",
-                            isCloseFriends, flags
-                        )
-                        selectedSong = null
-                        pollQ = ""
-                        picked = null; pickedSizeMb = 0f; caption = ""; location = ""; selectedFilter = "Original"
-                        hideLikes = false; hideShares = false; commentsOff = false; confirmSafeContent = false
-                        step = 0
-                        onToast("Upload started. You can keep using the app.")
-                    },
+                    onClick = { doPublish() },
                     modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 96.dp).height(50.dp).testTag("publish_button"),
                     shape = RoundedCornerShape(25.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = VynoraNeonPink)
                 ) { Text("Share", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color.White) }
+            }
+
+            // ----------------------------------------------------- EDITOR (Instagram style)
+            3 -> {
+                val p = picked
+                val isStory = mode == CreateMode.MOMENT
+                val cf = StudioFilters.matrix(selectedFilter)?.let {
+                    androidx.compose.ui.graphics.ColorFilter.colorMatrix(androidx.compose.ui.graphics.ColorMatrix(it))
+                }
+                fun needPhoto(action: () -> Unit) {
+                    if (p != null && p.isVideo) onToast("Draw & text work on photos only") else action()
+                }
+                Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
+                    if (p != null) {
+                        GalleryThumb(
+                            p.uri, p.isVideo,
+                            if (isStory) Modifier.fillMaxSize().padding(top = 56.dp, bottom = 170.dp, start = 6.dp, end = 6.dp).clip(RoundedCornerShape(20.dp))
+                            else Modifier.align(Alignment.Center).fillMaxWidth().aspectRatio(1f),
+                            px = 1080, colorFilter = cf
+                        )
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp).align(Alignment.TopCenter),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(onClick = { step = 0 }) { Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White) }
+                        Spacer(modifier = Modifier.weight(1f))
+                        Row(
+                            modifier = Modifier.clip(RoundedCornerShape(20.dp)).background(Color(0x66000000))
+                                .clickable { showMusicPicker = true }.padding(horizontal = 14.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Outlined.MusicNote, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(selectedSong?.label ?: "Add audio", color = Color.White, fontSize = 13.sp, maxLines = 1, modifier = Modifier.widthIn(max = 180.dp))
+                        }
+                        Spacer(modifier = Modifier.weight(1f))
+                        Spacer(modifier = Modifier.width(48.dp))
+                    }
+                    if (isStory) {
+                        Column(
+                            modifier = Modifier.align(Alignment.CenterEnd).padding(end = 14.dp, top = 40.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(18.dp)
+                        ) {
+                            @Composable fun SideTool(ic: androidx.compose.ui.graphics.vector.ImageVector, cd: String, onClick: () -> Unit) {
+                                Box(
+                                    modifier = Modifier.size(42.dp).clip(CircleShape).background(Color(0x66000000)).clickable(onClick = onClick),
+                                    contentAlignment = Alignment.Center
+                                ) { Icon(ic, contentDescription = cd, tint = Color.White) }
+                            }
+                            SideTool(Icons.Outlined.TextFields, "Text") { needPhoto { showEditor = true } }
+                            SideTool(Icons.Outlined.EmojiEmotions, "Poll") { showPollDialog = true }
+                            SideTool(Icons.Outlined.MusicNote, "Music") { showMusicPicker = true }
+                            SideTool(Icons.Outlined.Brush, "Draw") { needPhoto { showEditor = true } }
+                            SideTool(Icons.Outlined.AutoAwesome, "Filters") { showFilterStrip = !showFilterStrip }
+                        }
+                    }
+                    Column(
+                        modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(bottom = 90.dp)
+                    ) {
+                        if (showFilterStrip) {
+                            LazyRow(
+                                contentPadding = PaddingValues(horizontal = 12.dp),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp)
+                            ) {
+                                items(StudioFilters.names.size) { i ->
+                                    val n = StudioFilters.names[i]
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.clickable { selectedFilter = n }) {
+                                        if (p != null) {
+                                            GalleryThumb(
+                                                p.uri, p.isVideo,
+                                                Modifier.size(58.dp).clip(RoundedCornerShape(10.dp))
+                                                    .border(if (selectedFilter == n) 2.dp else 0.dp, if (selectedFilter == n) Color.White else Color.Transparent, RoundedCornerShape(10.dp)),
+                                                px = 160,
+                                                colorFilter = StudioFilters.matrix(n)?.let {
+                                                    androidx.compose.ui.graphics.ColorFilter.colorMatrix(androidx.compose.ui.graphics.ColorMatrix(it))
+                                                }
+                                            )
+                                        }
+                                        Text(n, color = Color.White, fontSize = 10.sp, maxLines = 1)
+                                    }
+                                }
+                            }
+                        }
+                        if (isStory) {
+                            OutlinedTextField(
+                                value = caption, onValueChange = { caption = it },
+                                placeholder = { Text("Add a caption…", color = Color(0xCCFFFFFF)) },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp),
+                                shape = RoundedCornerShape(26.dp),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedTextColor = Color.White, unfocusedTextColor = Color.White,
+                                    focusedContainerColor = Color(0x55000000), unfocusedContainerColor = Color(0x55000000),
+                                    focusedBorderColor = Color.White, unfocusedBorderColor = Color(0x88FFFFFF)
+                                )
+                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Checkbox(checked = confirmSafeContent, onCheckedChange = { confirmSafeContent = it })
+                                Text("I confirm: no nudity / 18+ / illegal content", color = Color.White, fontSize = 11.5.sp)
+                            }
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.weight(1f).clip(RoundedCornerShape(24.dp)).background(Color(0x66000000))
+                                        .clickable { isCloseFriends = false; doPublish() }.padding(vertical = 12.dp),
+                                    horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically
+                                ) { Text("Your story", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 14.sp) }
+                                Row(
+                                    modifier = Modifier.weight(1f).clip(RoundedCornerShape(24.dp)).background(Color(0x66000000))
+                                        .clickable { isCloseFriends = true; doPublish() }.padding(vertical = 12.dp),
+                                    horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(Icons.Outlined.Star, contentDescription = null, tint = Color(0xFF22C55E), modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Close Friends", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                }
+                                Box(
+                                    modifier = Modifier.size(46.dp).clip(CircleShape).background(Color(0xFF3B82F6))
+                                        .clickable { isCloseFriends = false; doPublish() },
+                                    contentAlignment = Alignment.Center
+                                ) { Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Share story", tint = Color.White) }
+                            }
+                        } else {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+                                horizontalArrangement = Arrangement.SpaceEvenly
+                            ) {
+                                @Composable fun BottomTool(ic: androidx.compose.ui.graphics.vector.ImageVector, label: String, onClick: () -> Unit) {
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable(onClick = onClick).padding(8.dp)) {
+                                        Icon(ic, contentDescription = label, tint = Color.White)
+                                        Text(label, color = Color.White, fontSize = 11.sp)
+                                    }
+                                }
+                                BottomTool(Icons.Outlined.MusicNote, "Audio") { showMusicPicker = true }
+                                BottomTool(Icons.Outlined.TextFields, "Text") { needPhoto { showEditor = true } }
+                                BottomTool(Icons.Outlined.AutoAwesome, "Filter") { showFilterStrip = !showFilterStrip }
+                                BottomTool(Icons.Outlined.Brush, "Edit") { needPhoto { showEditor = true } }
+                            }
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                if (p != null) {
+                                    GalleryThumb(p.uri, p.isVideo, Modifier.size(52.dp).clip(RoundedCornerShape(8.dp)).border(2.dp, Color.White, RoundedCornerShape(8.dp)), px = 160, colorFilter = cf)
+                                }
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Box(
+                                    modifier = Modifier.size(52.dp).clip(RoundedCornerShape(8.dp)).background(Color(0xFF1E2235)).clickable { step = 0 },
+                                    contentAlignment = Alignment.Center
+                                ) { Text("+", color = Color.White, fontSize = 24.sp) }
+                                Spacer(modifier = Modifier.weight(1f))
+                                Button(
+                                    onClick = { step = 1 },
+                                    shape = RoundedCornerShape(22.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3B82F6))
+                                ) { Text("Next", color = Color.White, fontWeight = FontWeight.Bold) }
+                            }
+                        }
+                    }
+                }
             }
 
             // ----------------------------------------------------- MORE OPTIONS
