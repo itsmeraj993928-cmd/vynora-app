@@ -166,6 +166,55 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
     private var likedIds: Set<String> = emptySet()
     private var likedClipIds: Set<String> = emptySet()
 
+    // ---- creators to follow (shown once, to people who follow almost nobody) ----
+    private val _suggestedUsers = MutableStateFlow<List<User>>(emptyList())
+    val suggestedUsers: StateFlow<List<User>> = _suggestedUsers.asStateFlow()
+
+    fun loadSuggestedIfNeeded() {
+        val me = _uiState.value.currentUser ?: return
+        val prefs = getApplication<Application>().getSharedPreferences("vynora_prefs", android.content.Context.MODE_PRIVATE)
+        if (prefs.getBoolean("suggest_shown_" + me.id, false) || _suggestedUsers.value.isNotEmpty()) return
+        viewModelScope.launch {
+            val following = repository.getFollowingIds(me.id)
+            if (following.size >= 5) { prefs.edit().putBoolean("suggest_shown_" + me.id, true).apply(); return@launch }
+            val list = repository.getSuggestedUsers(following + me.id, 12)
+            if (list.size >= 2) _suggestedUsers.value = list
+        }
+    }
+
+    fun dismissSuggested() {
+        val me = _uiState.value.currentUser
+        if (me != null) getApplication<Application>().getSharedPreferences("vynora_prefs", android.content.Context.MODE_PRIVATE)
+            .edit().putBoolean("suggest_shown_" + me.id, true).apply()
+        _suggestedUsers.value = emptyList()
+    }
+
+    // ---- account ----
+    fun setPrivateAccount(value: Boolean) {
+        val me = _uiState.value.currentUser ?: return
+        val updated = me.copy(isPrivateAccount = value)
+        _uiState.update { it.copy(currentUser = updated) }
+        viewModelScope.launch { repository.updateUserProfile(updated, me) }
+    }
+
+    /** Deletes posts, reels, stories, the profile and the sign-in account. */
+    fun deleteMyAccount() {
+        val me = _uiState.value.currentUser ?: return
+        showToast("Deleting your account...")
+        viewModelScope.launch {
+            val ok = repository.deleteAccountData(me.id)
+            if (!ok) { showToast("Could not delete your data right now. Please try again."); return@launch }
+            try {
+                com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.delete()?.await()
+            } catch (e: Exception) {
+                showToast("For safety, please log out, log in again, and then delete your account.")
+                return@launch
+            }
+            signOut()
+            showToast("Your account has been deleted.")
+        }
+    }
+
     /** Hidden from everyone (except the owner and admins) once 3 different people reported it. */
     private fun reportOk(count: Int, authorId: String, me: String): Boolean =
         count < 3 || authorId == me || _uiState.value.currentUser?.role == "ADMIN"
@@ -225,6 +274,18 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
                 repository.observeMoments().collect { momentsList ->
                     val visible = momentsList.filter { isVisibleTo(it.visibility, it.author.id, userId) && reportOk(it.reportCount, it.author.id, userId) }
                     _uiState.update { it.copy(moments = visible) }
+                }
+            }
+            launch {
+                // admins hear a siren the moment a new report arrives while the app is open
+                _uiState.first { it.currentUser?.role == "ADMIN" }
+                var last = -1
+                repository.observePendingReportCount().collect { n ->
+                    if (last >= 0 && n > last && AppForeground.inForeground) {
+                        com.example.util.Notifier.playSiren(getApplication())
+                        showToast("🚨 New report received")
+                    }
+                    last = n
                 }
             }
             launch {
@@ -1551,7 +1612,7 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
                     return@launch
                 }
                 // photos are shrunk first (much less data); videos upload as they are
-                val sendUri = if (isVideo) uri else (kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { com.example.util.UploadCompress.image(app, uri) } ?: uri)
+                val sendUri = if (isVideo) com.example.util.VideoCompress.compress(app, uri) else (kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { com.example.util.UploadCompress.image(app, uri) } ?: uri)
                 val res = com.example.util.CloudinaryUploader.uploadUri(
                     context = app,
                     uri = sendUri,

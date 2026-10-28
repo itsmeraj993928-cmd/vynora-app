@@ -56,7 +56,7 @@ service cloud.firestore {
         )
       );
 
-      allow delete: if isAdmin();
+      allow delete: if isAdmin() || isOwner(userId);
 
       // Private user fields (e.g. mobile number and date of birth) strictly private to the owner
       match /private/{document} {

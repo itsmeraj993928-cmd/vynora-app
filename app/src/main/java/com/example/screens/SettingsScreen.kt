@@ -34,6 +34,9 @@ fun SettingsScreen(
     onOpenLegalDoc: (String) -> Unit,
     onBack: () -> Unit,
     onToast: (String) -> Unit,
+    privateAccount: Boolean = false,
+    onPrivateChange: (Boolean) -> Unit = {},
+    onDeleteAccount: () -> Unit = {},
     canImportReels: Boolean = false,
     onImportReels: (String, Int, Boolean, (Int) -> Unit, (Int, String) -> Unit) -> Unit = { _, _, _, _, _ -> },
     modifier: Modifier = Modifier
@@ -82,7 +85,10 @@ fun SettingsScreen(
             dismissButton = { TextButton(enabled = !importing, onClick = { showImport = false }) { Text("Close") } }
         )
     }
-    var isPrivateAccount by remember { mutableStateOf(false) }
+    var isPrivateAccount by remember(privateAccount) { mutableStateOf(privateAccount) }
+    var showDeleteAccount by remember { mutableStateOf(false) }
+    val settingsCtx = androidx.compose.ui.platform.LocalContext.current
+    var remindersOn by remember { mutableStateOf(settingsCtx.getSharedPreferences("vynora_prefs", android.content.Context.MODE_PRIVATE).getBoolean("reminders_on", true)) }
     var showActivityStatus by remember { mutableStateOf(true) }
     var filterOffensiveComments by remember { mutableStateOf(true) }
     var showLanguageDialog by remember { mutableStateOf(false) }
@@ -177,6 +183,26 @@ fun SettingsScreen(
 
                         DataSaverRow(isDarkMode)
 
+                        HorizontalDivider(color = if (isDarkMode) Color(0x1AFFFFFF) else Color(0x1F000000))
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Daily reminder", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = if (isDarkMode) Color.White else Color(0xFF0F172A))
+                                Text("A gentle nudge in the evening to post today's challenge", fontSize = 11.sp, color = if (isDarkMode) Color(0xFF94A3B8) else Color(0xFF64748B))
+                            }
+                            Switch(
+                                checked = remindersOn,
+                                onCheckedChange = {
+                                    remindersOn = it
+                                    settingsCtx.getSharedPreferences("vynora_prefs", android.content.Context.MODE_PRIVATE).edit().putBoolean("reminders_on", it).apply()
+                                },
+                                colors = SwitchDefaults.colors(checkedThumbColor = VynoraNeonPink)
+                            )
+                        }
+
                         if (canImportReels) {
                             HorizontalDivider(color = if (isDarkMode) Color(0x1AFFFFFF) else Color(0x1F000000))
                             Row(
@@ -266,6 +292,7 @@ fun SettingsScreen(
                                 checked = isPrivateAccount,
                                 onCheckedChange = {
                                     isPrivateAccount = it
+                                    onPrivateChange(it)
                                     onToast(if (it) "Account set to Private" else "Account set to Public")
                                 },
                                 colors = SwitchDefaults.colors(checkedThumbColor = VynoraNeonCyan)
@@ -400,7 +427,7 @@ fun SettingsScreen(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable { onToast("Account deletion request submitted (30-day grace period)") }
+                                .clickable { showDeleteAccount = true }
                                 .padding(16.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -412,6 +439,20 @@ fun SettingsScreen(
                 }
             }
         }
+    }
+
+    if (showDeleteAccount) {
+        AlertDialog(
+            onDismissRequest = { showDeleteAccount = false },
+            title = { Text("Delete your account?") },
+            text = { Text("This permanently deletes your profile, posts, reels and stories. It cannot be undone.") },
+            confirmButton = {
+                TextButton(onClick = { showDeleteAccount = false; onDeleteAccount() }) {
+                    Text("Delete forever", color = Color(0xFFEF4444), fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = { TextButton(onClick = { showDeleteAccount = false }) { Text("Cancel") } }
+        )
     }
 
     // Language Selection Modal
