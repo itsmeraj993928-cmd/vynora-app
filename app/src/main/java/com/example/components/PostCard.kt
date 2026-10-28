@@ -53,7 +53,8 @@ fun PostCard(
     onAuthorClick: () -> Unit,
     modifier: Modifier = Modifier,
     isOwner: Boolean = false,
-    onDeleteClick: () -> Unit = {}
+    onDeleteClick: () -> Unit = {},
+    onNotInterested: (() -> Unit)? = null
 ) {
     var showBigHeart by remember { mutableStateOf(false) }
     var menuExpanded by remember { mutableStateOf(false) }
@@ -146,6 +147,16 @@ fun PostCard(
                             }
                         )
                     } else {
+                        if (onNotInterested != null) {
+                            DropdownMenuItem(
+                                text = { Text("Not interested") },
+                                leadingIcon = { Icon(Icons.Filled.Close, contentDescription = null) },
+                                onClick = {
+                                    menuExpanded = false
+                                    onNotInterested()
+                                }
+                            )
+                        }
                         DropdownMenuItem(
                             text = { Text("Report Post", color = Color(0xFFEF4444)) },
                             leadingIcon = { Icon(Icons.Outlined.Flag, contentDescription = null, tint = Color(0xFFEF4444)) },

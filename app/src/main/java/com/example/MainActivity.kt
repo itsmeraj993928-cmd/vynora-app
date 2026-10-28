@@ -264,7 +264,8 @@ fun VynoraApp(viewModel: VynoraViewModel) {
                                         onFollowAuthor = { id, username -> viewModel.toggleFollowById(id, username) },
                                         isRefreshing = isRefreshing,
                                         onRefresh = { viewModel.refreshAll() },
-                                        onSaveNote = { t, sg -> viewModel.saveNote(t, sg) }
+                                        onSaveNote = { t, sg -> viewModel.saveNote(t, sg) },
+                                        onNotInterested = { id -> viewModel.notInterested(id) }
                                     )
                                 }
                                 MainTab.EXPLORE -> {
