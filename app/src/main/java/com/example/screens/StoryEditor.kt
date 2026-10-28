@@ -116,7 +116,7 @@ internal fun StoryEditorDialog(uri: Uri, onDone: (Uri) -> Unit, onCancel: () -> 
                     }.padding(8.dp)
                 )
             }
-            Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+            Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
                 val b = bmp
                 if (b != null) {
                     Box(
@@ -162,7 +162,7 @@ internal fun StoryEditorDialog(uri: Uri, onDone: (Uri) -> Unit, onCancel: () -> 
                 } else Text("Loading…", color = Color.White)
             }
             Row(
-                modifier = Modifier.fillMaxWidth().padding(12.dp),
+                modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 12.dp).padding(bottom = 36.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
