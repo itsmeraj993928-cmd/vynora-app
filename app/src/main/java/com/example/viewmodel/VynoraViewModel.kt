@@ -225,6 +225,8 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
     private val pendingChatParticipants = HashMap<String, User>()
     private fun blockedNames(): Set<String> = try { blockedPrefs().getStringSet("names", emptySet()) ?: emptySet() } catch (e: Exception) { emptySet() }
 
+    private val feedSeed: Int = kotlin.random.Random.nextInt(1000)
+
     private fun startDataObservations(userId: String) {
         observeJob?.cancel()
         likedIds = emptySet()
@@ -243,7 +245,7 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
                                 comments = it.comments.sortedByDescending { c -> c.createdAt }
                             )
                         }
-                    _uiState.update { it.copy(posts = visible) }
+                    _uiState.update { it.copy(posts = com.example.util.FeedRanker.rankPosts(visible, followingIds, likedIds, feedSeed)) }
                 }
             }
             launch {
@@ -267,7 +269,7 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
                             val f = it.author.id in followingIds
                             it.copy(isLiked = it.id in likedClipIds, isFollowing = f, author = it.author.copy(isFollowing = f))
                         }
-                    _uiState.update { it.copy(clips = visible) }
+                    _uiState.update { it.copy(clips = com.example.util.FeedRanker.rankClips(visible, followingIds, likedClipIds, feedSeed)) }
                 }
             }
             launch {
