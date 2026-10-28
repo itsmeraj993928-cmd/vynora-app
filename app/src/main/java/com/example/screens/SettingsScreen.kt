@@ -88,6 +88,7 @@ fun SettingsScreen(
     var isPrivateAccount by remember(privateAccount) { mutableStateOf(privateAccount) }
     var showDeleteAccount by remember { mutableStateOf(false) }
     val settingsCtx = androidx.compose.ui.platform.LocalContext.current
+    var instantOn by remember { mutableStateOf(com.example.util.AlertsService.enabled(settingsCtx)) }
     var remindersOn by remember { mutableStateOf(settingsCtx.getSharedPreferences("vynora_prefs", android.content.Context.MODE_PRIVATE).getBoolean("reminders_on", true)) }
     var showActivityStatus by remember { mutableStateOf(true) }
     var filterOffensiveComments by remember { mutableStateOf(true) }
@@ -182,6 +183,23 @@ fun SettingsScreen(
                         HorizontalDivider(color = if (isDarkMode) Color(0x1AFFFFFF) else Color(0x1F000000))
 
                         DataSaverRow(isDarkMode)
+
+                        HorizontalDivider(color = if (isDarkMode) Color(0x1AFFFFFF) else Color(0x1F000000))
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Instant alerts", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = if (isDarkMode) Color.White else Color(0xFF0F172A))
+                                Text("Get likes, comments and follows even when the app is closed", fontSize = 11.sp, color = if (isDarkMode) Color(0xFF94A3B8) else Color(0xFF64748B))
+                            }
+                            Switch(
+                                checked = instantOn,
+                                onCheckedChange = { instantOn = it; com.example.util.AlertsService.setEnabled(settingsCtx, it) },
+                                colors = SwitchDefaults.colors(checkedThumbColor = VynoraNeonPink)
+                            )
+                        }
 
                         HorizontalDivider(color = if (isDarkMode) Color(0x1AFFFFFF) else Color(0x1F000000))
                         Row(

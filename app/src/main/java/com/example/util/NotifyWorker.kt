@@ -18,13 +18,15 @@ class NotifyWorker(private val ctx: Context, params: WorkerParameters) : Corouti
         try {
             val user = FirebaseAuth.getInstance().currentUser ?: return Result.success()
             if (AppForeground.inForeground) return Result.success()
+            // the always-on service already shows these instantly; only the daily reminder is left for this worker
+            val serviceOn = AlertsService.running
             val prefs = ctx.getSharedPreferences("vynora_prefs", Context.MODE_PRIVATE)
             val db = FirebaseFirestore.getInstance()
             val now = System.currentTimeMillis()
             val last = prefs.getLong("worker_last_check", now - 15 * 60 * 1000L)
 
             // 1) activity
-            val notifs = db.collection("notifications").whereEqualTo("recipientId", user.uid).get().await()
+            val notifs = if (serviceOn) emptyList() else db.collection("notifications").whereEqualTo("recipientId", user.uid).get().await()
                 .documents.mapNotNull { d -> d.getLong("createdAt")?.let { t -> Triple(t, d.getString("type") ?: "", d.getBoolean("isRead") ?: false) } }
                 .filter { it.first > last && !it.third }
             if (notifs.isNotEmpty()) {
@@ -41,7 +43,7 @@ class NotifyWorker(private val ctx: Context, params: WorkerParameters) : Corouti
 
             // 2) admin: siren for new reports
             val me = db.collection("users").document(user.uid).get().await()
-            if (me.getString("role") == "ADMIN") {
+            if (!serviceOn && me.getString("role") == "ADMIN") {
                 val reps = db.collection("reports").whereEqualTo("status", "PENDING").get().await()
                     .documents.mapNotNull { it.getLong("createdAt") }.filter { it > last }
                 if (reps.isNotEmpty()) {

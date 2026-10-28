@@ -143,6 +143,11 @@ fun VynoraApp(viewModel: VynoraViewModel) {
             }
         }
     }
+    // Keep instant alerts running (also when the app is closed)
+    LaunchedEffect(uiState.isLoggedIn) {
+        if (uiState.isLoggedIn) com.example.util.AlertsService.start(hostContext)
+        else com.example.util.AlertsService.stop(hostContext)
+    }
     // One-time "follow a few creators" suggestion for accounts that follow almost nobody
     val suggested by viewModel.suggestedUsers.collectAsStateWithLifecycle()
     LaunchedEffect(uiState.isLoggedIn, uiState.currentUser?.id) {

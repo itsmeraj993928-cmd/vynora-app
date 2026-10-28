@@ -17,12 +17,14 @@ object Notifier {
     const val CH_ACTIVITY = "activity_v1"
     const val CH_REMINDER = "reminder_v1"
     const val CH_SIREN = "reports_siren_v1"
+    const val CH_SERVICE = "alerts_service_v1"
 
     fun ensureChannels(ctx: Context) {
         if (android.os.Build.VERSION.SDK_INT < 26) return
         val nm = ctx.getSystemService(NotificationManager::class.java) ?: return
         nm.createNotificationChannel(NotificationChannel(CH_ACTIVITY, "Likes, comments and follows", NotificationManager.IMPORTANCE_DEFAULT))
         nm.createNotificationChannel(NotificationChannel(CH_REMINDER, "Daily reminder", NotificationManager.IMPORTANCE_LOW))
+        nm.createNotificationChannel(NotificationChannel(CH_SERVICE, "Instant alerts connection", NotificationManager.IMPORTANCE_MIN))
         val siren = NotificationChannel(CH_SIREN, "Report alerts (siren)", NotificationManager.IMPORTANCE_HIGH)
         siren.setSound(
             Uri.parse("android.resource://${ctx.packageName}/${R.raw.siren}"),
