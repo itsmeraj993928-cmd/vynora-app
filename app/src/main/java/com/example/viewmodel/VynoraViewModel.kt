@@ -1594,10 +1594,15 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
             viewModelScope.launch {
                 // safety check FIRST: nothing is uploaded until the AI has looked at the photo (or a frame of the video)
                 _uploadStatus.update { st -> st?.copy(progress = 0) }
+                var recheckFrame: ByteArray? = null
                 val verdict = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                     val frame = com.example.screens.jpegForAi(app, uri, isVideo)
                     if (frame == null || !com.example.service.GeminiService.canCheckImages()) 0
-                    else when (com.example.service.GeminiService.isUnsafeImage(frame)) { true -> 1; false -> 0; null -> 2 }
+                    else when (com.example.service.GeminiService.isUnsafeImage(frame)) {
+                        true -> 1
+                        false -> 0
+                        null -> { recheckFrame = frame; 2 }
+                    }
                 }
                 if (verdict == 1) {
                     _uploadStatus.value = null
@@ -1605,12 +1610,8 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
                     showToast("This $label can't be posted because it contains adult or sexually explicit content, which is against VYNORA's Community Guidelines.")
                     return@launch
                 }
-                if (verdict == 2) {
-                    _uploadStatus.value = null
-                    lastUploadJob = null
-                    showToast("We couldn't complete the safety review right now. Please check your connection and try again in a minute.")
-                    return@launch
-                }
+                // verdict 2 = the AI could not be reached: the upload goes ahead and the picture is re-checked in the background
+                if (verdict == 2) showToast("Safety AI is offline (code ${com.example.service.GeminiService.lastCheckNote.trim()}). Your $label will be re-checked in the background.")
                 // photos are shrunk first (much less data); videos upload as they are
                 val sendUri = if (isVideo) com.example.util.VideoCompress.compress(app, uri) else (kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { com.example.util.UploadCompress.image(app, uri) } ?: uri)
                 val res = com.example.util.CloudinaryUploader.uploadUri(
@@ -1650,6 +1651,7 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
                         _uploadStatus.value = null
                         lastUploadJob = null
                         showToast("Your $label is live! 🎉")
+                        recheckFrame?.let { f -> recheckLater(f, publicId, url, label) }
                     }
                 } else {
                     _uploadStatus.value = UploadStatus(
@@ -1661,6 +1663,25 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
         }
         lastUploadJob = job
         job()
+    }
+
+    /** The safety AI was offline during upload: keep trying in the background and remove the item if it turns out to be adult content. */
+    private fun recheckLater(frame: ByteArray, publicId: String, url: String, label: String) {
+        viewModelScope.launch {
+            repeat(12) {
+                kotlinx.coroutines.delay(45_000L)
+                val v = com.example.service.GeminiService.isUnsafeImage(frame) ?: return@repeat
+                if (v) {
+                    val key = if (publicId.isNotBlank()) publicId else url
+                    val s = _uiState.value
+                    s.posts.firstOrNull { p -> p.mediaUrls.any { it.contains(key) } }?.let { deleteMyPost(it.id) }
+                    s.clips.firstOrNull { it.mediaUrl.contains(key) }?.let { deleteMyClip(it.id) }
+                    s.moments.firstOrNull { it.mediaUrl.contains(key) }?.let { deleteMyMoment(it.id) }
+                    showToast("Your $label was removed: it contains adult or sexually explicit content, which is against VYNORA's Community Guidelines.")
+                }
+                return@launch
+            }
+        }
     }
 
     // --- Posting streak: +1 for every day with a post, reel or story ---
