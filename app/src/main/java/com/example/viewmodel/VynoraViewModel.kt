@@ -1807,7 +1807,11 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
         )
 
         viewModelScope.launch {
-            repository.savePost(newPost)
+            val err = repository.savePost(newPost)
+            if (err != null) {
+                _uiState.update { st -> st.copy(posts = st.posts.filterNot { it.id == newPost.id }) }
+                showToast("Post couldn't be saved: $err")
+            }
         }
 
         _uiState.update { state ->
