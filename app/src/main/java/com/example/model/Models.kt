@@ -135,7 +135,8 @@ data class Post(
     val cloudinaryPublicId: String = "",
     val cloudinaryResourceType: String = "image",
     val visibility: String = "PUBLIC", // PUBLIC, FOLLOWERS, PRIVATE
-    val altText: String = ""
+    val altText: String = "",
+    val viewsCount: Int = 0
 )
 
 data class Moment(
@@ -202,7 +203,8 @@ data class ChatMessage(
     val reactionEmoji: String? = null,
     @get:com.google.firebase.firestore.PropertyName("isRead") @set:com.google.firebase.firestore.PropertyName("isRead") var isRead: Boolean = true,
     val createdAt: Long = System.currentTimeMillis(),
-    val edited: Boolean = false
+    val edited: Boolean = false,
+    val senderName: String = ""
 )
 
 data class ChatConversation(
@@ -214,7 +216,9 @@ data class ChatConversation(
     val isGroup: Boolean = false,
     val groupName: String? = null,
     val updatedAt: Long = System.currentTimeMillis(),
-    val otherSeenAt: Long = 0L
+    val otherSeenAt: Long = 0L,
+    val adminId: String = "",
+    val memberIds: List<String> = emptyList()
 )
 
 enum class NotificationType {

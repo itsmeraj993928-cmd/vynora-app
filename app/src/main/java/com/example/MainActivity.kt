@@ -300,7 +300,9 @@ fun VynoraApp(viewModel: VynoraViewModel) {
                                         onRepost = { p -> viewModel.repostPost(p) },
                                         onHashtagClick = { t -> viewModel.openHashtag(t) },
                                         savedFolders = uiState.savedFolders,
-                                        onSaveToFolder = { id, f -> viewModel.saveToFolder(id, f) }
+                                        onSaveToFolder = { id, f -> viewModel.saveToFolder(id, f) },
+                                        onMute = { u -> viewModel.toggleMuteUser(u) },
+                                        onPostView = { id -> viewModel.recordPostView(id) }
                                     )
                                 }
                                 MainTab.EXPLORE -> {
@@ -478,7 +480,9 @@ fun VynoraApp(viewModel: VynoraViewModel) {
                     isDarkMode = uiState.isDarkMode,
                     onOpenConversation = { id -> viewModel.navigateTo(ScreenDestination.ChatRoom(id)) },
                     onBack = { viewModel.navigateBack() },
-                    isRequest = { c -> viewModel.isMessageRequest(c) }
+                    isRequest = { c -> viewModel.isMessageRequest(c) },
+                    loadTargets = { viewModel.loadShareTargets() },
+                    onCreateGroup = { n, us -> viewModel.createGroup(n, us) }
                 )
             }
             is ScreenDestination.ChatRoom -> {
@@ -511,6 +515,10 @@ fun VynoraApp(viewModel: VynoraViewModel) {
                     onDeleteMessage = { mid -> viewModel.deleteChatMessage(conversation.id, mid) },
                     onMarkSeen = { viewModel.markChatSeen(conversation.id) },
                     onEditMessage = { mid, t -> viewModel.editChatMessage(conversation.id, mid, t) },
+                    onSendAttachment = { u -> viewModel.sendAttachment(conversation.id, u) },
+                    onLeaveGroup = { viewModel.leaveGroup(conversation.id) },
+                    onAddMembers = { us -> viewModel.addGroupMembers(conversation.id, us) },
+                    loadTargets = { viewModel.loadShareTargets() },
                     onSendVoiceNote = { file, dur -> viewModel.sendVoiceNote(conversation.id, file, dur) },
                     onStartCall = { video ->
                         if (conversation.isGroup) viewModel.showToast("Calls work in one-to-one chats")

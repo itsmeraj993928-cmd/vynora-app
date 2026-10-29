@@ -59,7 +59,8 @@ fun PostCard(
     onNotInterested: (() -> Unit)? = null,
     onRepost: (() -> Unit)? = null,
     onHashtagClick: (String) -> Unit = {},
-    onSaveToFolder: (() -> Unit)? = null
+    onSaveToFolder: (() -> Unit)? = null,
+    onMute: (() -> Unit)? = null
 ) {
     var showBigHeart by remember { mutableStateOf(false) }
     var menuExpanded by remember { mutableStateOf(false) }
@@ -152,6 +153,16 @@ fun PostCard(
                             }
                         )
                     } else {
+                        if (onMute != null) {
+                            DropdownMenuItem(
+                                text = { Text("Mute @${post.author.username}") },
+                                leadingIcon = { Icon(Icons.Outlined.VolumeOff, contentDescription = null) },
+                                onClick = {
+                                    menuExpanded = false
+                                    onMute()
+                                }
+                            )
+                        }
                         if (onRepost != null) {
                             DropdownMenuItem(
                                 text = { Text("Repost") },
@@ -449,7 +460,7 @@ fun PostCard(
 
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = com.example.util.timeAgo(post.createdAt),
+                text = com.example.util.timeAgo(post.createdAt) + (if (post.viewsCount > 0) "  •  ${com.example.util.formatCount(post.viewsCount)} views" else ""),
                 fontSize = 10.sp,
                 color = if (isDarkMode) Color(0xFF64748B) else Color(0xFF94A3B8)
             )

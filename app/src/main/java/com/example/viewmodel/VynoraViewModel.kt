@@ -492,6 +492,15 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch { repository.bumpClipViews(clipId) }
     }
 
+    /** Counts one view when a post is shown in the feed (not for my own posts). */
+    fun recordPostView(postId: String) {
+        val me = _uiState.value.currentUser?.id ?: return
+        val post = _uiState.value.posts.firstOrNull { it.id == postId } ?: return
+        if (post.author.id == me || !viewedThisSession.add("p_$postId")) return
+        _uiState.update { st -> st.copy(posts = st.posts.map { if (it.id == postId) it.copy(viewsCount = it.viewsCount + 1) else it }) }
+        viewModelScope.launch { repository.bumpPostViews(postId) }
+    }
+
     fun openHashtag(tag: String) {
         _uiState.update { it.copy(pendingExploreQuery = tag) }
         selectTab(MainTab.EXPLORE)
@@ -1246,6 +1255,72 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
             sent++
         }
         if (sent > 0) showToast(if (sent == 1) "Reel sent" else "Reel sent to $sent people")
+    }
+
+    fun createGroup(name: String, members: List<User>) {
+        val me = _uiState.value.currentUser ?: return
+        if (name.isBlank() || members.isEmpty()) { showToast("Add a group name and at least one member"); return }
+        viewModelScope.launch {
+            val id = repository.createGroup(me, name, members.map { it.id })
+            if (id == null) showToast("Could not create the group. Try again.")
+            else { showToast("Group created"); navigateTo(ScreenDestination.ChatRoom(id)) }
+        }
+    }
+
+    fun leaveGroup(conversationId: String) {
+        val me = _uiState.value.currentUser?.id ?: return
+        _uiState.update { st -> st.copy(chats = st.chats.filterNot { it.id == conversationId }) }
+        viewModelScope.launch { repository.leaveGroup(conversationId, me) }
+        navigateBack()
+        showToast("You left the group")
+    }
+
+    fun addGroupMembers(conversationId: String, users: List<User>) {
+        if (users.isEmpty()) return
+        viewModelScope.launch { repository.addGroupMembers(conversationId, users.map { it.id }); showToast("Members added") }
+    }
+
+    /** Photo or document in a chat: uploaded to Cloudinary, sent as "[img]url" or "[doc]name|url". */
+    fun sendAttachment(conversationId: String, uri: android.net.Uri) {
+        val app = getApplication<Application>()
+        val mime = try { app.contentResolver.getType(uri) } catch (e: Exception) { null } ?: ""
+        var name = "file"
+        var size = 0L
+        try {
+            app.contentResolver.query(uri, null, null, null, null)?.use { c ->
+                if (c.moveToFirst()) {
+                    val ni = c.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                    val si = c.getColumnIndex(android.provider.OpenableColumns.SIZE)
+                    if (ni >= 0) name = c.getString(ni) ?: name
+                    if (si >= 0) size = c.getLong(si)
+                }
+            }
+        } catch (e: Exception) { }
+        if (size > 15L * 1024 * 1024) { showToast("File is too large. Maximum size is 15 MB"); return }
+        val lower = name.lowercase()
+        val blocked = listOf(".apk", ".exe", ".bat", ".sh", ".js", ".jar", ".msi")
+        if (blocked.any { lower.endsWith(it) }) { showToast("This file type is not allowed"); return }
+        if (!com.example.util.NetworkMonitor.online) { showToast("No internet. Try again when you are online."); return }
+        val isImage = mime.startsWith("image")
+        showToast(if (isImage) "Sending photo…" else "Sending file…")
+        viewModelScope.launch {
+            if (isImage) {
+                // photos get the same safety check as posts
+                val frame = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { com.example.screens.jpegForAi(app, uri, false) }
+                if (frame != null && com.example.service.GeminiService.canCheckImages() &&
+                    com.example.service.GeminiService.isUnsafeImage(frame) == true) {
+                    showToast("This photo can't be sent because it may contain adult or graphic content.")
+                    return@launch
+                }
+            }
+            val res = com.example.util.CloudinaryUploader.uploadUri(
+                context = app, uri = uri,
+                fileName = if (isImage) null else name.replace(Regex("[^A-Za-z0-9._-]"), "_").take(60)
+            )
+            val url = res.getOrNull()?.secureUrl
+            if (url.isNullOrBlank()) showToast("Could not send. Please try again.")
+            else sendMessage(conversationId, if (isImage) "[img]$url" else "[doc]${name.replace("|", "-")}|$url")
+        }
     }
 
     fun sendVoiceNote(conversationId: String, file: java.io.File, duration: String) {
@@ -2054,7 +2129,8 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
             timestamp = "Now",
             isAudio = isAudio,
             audioDuration = audioDuration,
-            isRead = true
+            isRead = true,
+            senderName = user.username
         )
 
         _uiState.update { state ->
@@ -2078,8 +2154,8 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
             }
             state.copy(chats = updatedChats)
         }
-        val otherId = _uiState.value.chats.firstOrNull { it.id == conversationId }?.participant?.id
-            ?: VynoraOfficial.OFFICIAL_USER_ID
+        val conv = _uiState.value.chats.firstOrNull { it.id == conversationId }
+        val otherId: String? = if (conv?.isGroup == true) null else (conv?.participant?.id ?: VynoraOfficial.OFFICIAL_USER_ID)
         viewModelScope.launch { repository.sendChatMessage(conversationId, user, otherId, newMessage) }
     }
 
