@@ -11,6 +11,8 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
@@ -55,7 +57,9 @@ fun PostCard(
     isOwner: Boolean = false,
     onDeleteClick: () -> Unit = {},
     onNotInterested: (() -> Unit)? = null,
-    onRepost: (() -> Unit)? = null
+    onRepost: (() -> Unit)? = null,
+    onHashtagClick: (String) -> Unit = {},
+    onSaveToFolder: (() -> Unit)? = null
 ) {
     var showBigHeart by remember { mutableStateOf(false) }
     var menuExpanded by remember { mutableStateOf(false) }
@@ -177,6 +181,16 @@ fun PostCard(
                             }
                         )
                     }
+                    if (onSaveToFolder != null) {
+                        DropdownMenuItem(
+                            text = { Text("Save to folder") },
+                            leadingIcon = { Icon(Icons.Outlined.BookmarkBorder, contentDescription = null) },
+                            onClick = {
+                                menuExpanded = false
+                                onSaveToFolder()
+                            }
+                        )
+                    }
                     DropdownMenuItem(
                         text = { Text("Share Link") },
                         leadingIcon = { Icon(Icons.Outlined.Share, contentDescription = null) },
@@ -217,7 +231,7 @@ fun PostCard(
             ) { page ->
                 AsyncImage(
                     model = post.mediaUrls[page],
-                    contentDescription = "Post Media",
+                    contentDescription = post.altText.ifBlank { "Photo by ${post.author.username}" },
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Crop
                 )
@@ -405,13 +419,21 @@ fun PostCard(
             // Hashtags
             if (post.hashtags.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = post.hashtags.joinToString(" "),
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = VynoraNeonCyan,
-                    lineHeight = 16.sp
-                )
+                Row(
+                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    post.hashtags.forEach { tag ->
+                        Text(
+                            text = tag,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = VynoraNeonCyan,
+                            lineHeight = 16.sp,
+                            modifier = Modifier.clickable { onHashtagClick(tag) }
+                        )
+                    }
+                }
             }
 
             // Comments Preview

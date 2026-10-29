@@ -134,7 +134,8 @@ data class Post(
     val audioTrack: String? = null,
     val cloudinaryPublicId: String = "",
     val cloudinaryResourceType: String = "image",
-    val visibility: String = "PUBLIC" // PUBLIC, FOLLOWERS, PRIVATE
+    val visibility: String = "PUBLIC", // PUBLIC, FOLLOWERS, PRIVATE
+    val altText: String = ""
 )
 
 data class Moment(

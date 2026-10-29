@@ -86,7 +86,9 @@ data class VynoraUiState(
     val isAiGenerating: Boolean = false,
     val keywordFilterActive: Boolean = true,
     val offensiveKeywords: List<String> = listOf("scam", "cheat", "hate", "idiot", "fake", "abuse"),
-    val deviceId: String = ""
+    val deviceId: String = "",
+    val pendingExploreQuery: String = "",
+    val savedFolders: Map<String, String> = emptyMap()
 )
 
 private const val CALL_SERVER_BASE = "https://meet.jit.si"
@@ -229,6 +231,7 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
 
     private fun startDataObservations(userId: String) {
         observeJob?.cancel()
+        _uiState.update { it.copy(savedFolders = loadFolders()) }
         likedIds = emptySet()
         likedClipIds = emptySet()
         observeJob = viewModelScope.launch {
@@ -460,6 +463,37 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
                 selectedTab = if (destination is ScreenDestination.Main) destination.tab else current.selectedTab
             )
         }
+    }
+
+    private fun folderPrefs() = getApplication<Application>().getSharedPreferences("vynora_folders", android.content.Context.MODE_PRIVATE)
+    private fun loadFolders(): Map<String, String> = try {
+        folderPrefs().all.mapNotNull { (k, v) -> (v as? String)?.let { k to it } }.toMap()
+    } catch (e: Exception) { emptyMap() }
+
+    /** Put a post into one of my saved folders (saves it first if needed). */
+    fun saveToFolder(postId: String, folder: String) {
+        val name = folder.trim().take(24)
+        if (name.isBlank()) return
+        val post = _uiState.value.posts.firstOrNull { it.id == postId } ?: return
+        if (!post.isSaved) toggleSavePost(postId)
+        try { folderPrefs().edit().putString(postId, name).apply() } catch (e: Exception) { }
+        _uiState.update { it.copy(savedFolders = loadFolders()) }
+        showToast("Saved to \"$name\"")
+    }
+
+    fun openHashtag(tag: String) {
+        _uiState.update { it.copy(pendingExploreQuery = tag) }
+        selectTab(MainTab.EXPLORE)
+    }
+
+    fun clearExploreQuery() { _uiState.update { it.copy(pendingExploreQuery = "") } }
+
+    /** A chat is a "request" when someone I don't follow wrote to me and I never replied. */
+    fun isMessageRequest(conv: ChatConversation): Boolean {
+        val me = _uiState.value.currentUser?.id ?: return false
+        val other = conv.participant.id
+        if (conv.isGroup || other.isBlank() || other == VynoraOfficial.OFFICIAL_USER_ID || conv.participant.isOfficial) return false
+        return conv.messages.isNotEmpty() && conv.messages.none { it.senderId == me } && other !in followingIds
     }
 
     fun selectTab(tab: MainTab) {
@@ -1010,7 +1044,10 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
             state.copy(posts = updated)
         }
         val postAuthorId = _uiState.value.posts.firstOrNull { it.id == postId }?.author?.id ?: ""
-        viewModelScope.launch { repository.saveComment(postId, newComment, postAuthorId) }
+        viewModelScope.launch {
+            repository.saveComment(postId, newComment, postAuthorId)
+            if (text.contains('@')) repository.notifyMentions(user, text, postId)
+        }
     }
 
     fun toggleLikeComment(postId: String, commentId: String) {
@@ -1659,7 +1696,11 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
                                 cloudinaryPublicId = publicId,
                                 cloudinaryResourceType = if (isVideo) "video" else "image",
                                 visibility = visibility,
-                                audioTrack = com.example.util.MusicTrack.unpack(music).first.takeIf { it.isNotBlank() && it != "Original audio" }
+                                audioTrack = com.example.util.MusicTrack.unpack(music).first.takeIf { it.isNotBlank() && it != "Original audio" },
+                                altText = if (isVideo || !com.example.service.GeminiService.canCheckImages()) "" else (
+                                    kotlinx.coroutines.withTimeoutOrNull(8000L) {
+                                        com.example.screens.jpegForAi(app, uri, false)?.let { b -> com.example.service.GeminiService.describeForAlt(b) }
+                                    } ?: "")
                             )
                         }
                         _uploadStatus.value = null
@@ -1820,7 +1861,8 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
         cloudinaryPublicId: String = "",
         cloudinaryResourceType: String = "image",
         visibility: String = "PUBLIC",
-        audioTrack: String? = null
+        audioTrack: String? = null,
+        altText: String = ""
     ) {
         val user = _uiState.value.currentUser ?: return
         bumpStreak()
@@ -1840,7 +1882,8 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
             cloudinaryPublicId = cloudinaryPublicId,
             cloudinaryResourceType = cloudinaryResourceType,
             visibility = visibility,
-            audioTrack = audioTrack
+            audioTrack = audioTrack,
+            altText = altText
         )
 
         viewModelScope.launch {
@@ -1848,6 +1891,8 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
             if (err != null) {
                 _uiState.update { st -> st.copy(posts = st.posts.filterNot { it.id == newPost.id }) }
                 showToast("Post couldn't be saved: $err")
+            } else if (caption.contains('@')) {
+                repository.notifyMentions(user, caption, newPost.id)
             }
         }
 

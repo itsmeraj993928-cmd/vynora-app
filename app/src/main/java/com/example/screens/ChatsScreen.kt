@@ -58,7 +58,8 @@ fun ChatsScreen(
     isDarkMode: Boolean,
     onOpenConversation: (String) -> Unit,
     onBack: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    isRequest: (ChatConversation) -> Boolean = { false }
 ) {
     var searchQuery by remember { mutableStateOf("") }
     var selectedTab by remember { mutableStateOf(0) } // 0: Primary, 1: Requests
@@ -129,11 +130,21 @@ fun ChatsScreen(
 
         Spacer(modifier = Modifier.height(12.dp))
 
+        val requestCount = chats.count { isRequest(it) }
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            FilterChip(selected = selectedTab == 0, onClick = { selectedTab = 0 }, label = { Text("Primary") })
+            FilterChip(selected = selectedTab == 1, onClick = { selectedTab = 1 }, label = { Text("Requests ($requestCount)") })
+        }
+
         HorizontalDivider(color = if (isDarkMode) Color(0x22FFFFFF) else Color(0x1F000000))
 
         // --- 4. Chat List ---
-        val filteredChats = if (searchQuery.isBlank()) chats else {
-            chats.filter {
+        val tabChats = chats.filter { isRequest(it) == (selectedTab == 1) }
+        val filteredChats = if (searchQuery.isBlank()) tabChats else {
+            tabChats.filter {
                 it.participant.username.contains(searchQuery, ignoreCase = true) ||
                 it.lastMessage.text.contains(searchQuery, ignoreCase = true)
             }

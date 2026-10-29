@@ -45,9 +45,14 @@ fun ExploreScreen(
     onPostClick: (Post) -> Unit,
     modifier: Modifier = Modifier,
     isRefreshing: Boolean = false,
-    onRefresh: () -> Unit = {}
+    onRefresh: () -> Unit = {},
+    initialQuery: String = "",
+    onQueryConsumed: () -> Unit = {}
 ) {
     var searchQuery by remember { mutableStateOf("") }
+    LaunchedEffect(initialQuery) {
+        if (initialQuery.isNotBlank()) { searchQuery = initialQuery; onQueryConsumed() }
+    }
     var selectedCategory by remember { mutableStateOf("All") }
 
     val categories = listOf("All", "Accounts", "#Trends", "Nightlife", "Aesthetic", "Music")

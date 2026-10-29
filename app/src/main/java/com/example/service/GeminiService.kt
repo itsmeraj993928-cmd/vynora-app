@@ -40,6 +40,15 @@ object GeminiService {
                 "No hashtags. Return only the caption text."
         callGeminiApi(prompt, apiKey, android.util.Base64.encodeToString(jpeg, android.util.Base64.NO_WRAP))
     }
+    /** One plain sentence describing the photo, for screen readers (accessibility). */
+    suspend fun describeForAlt(jpeg: ByteArray): String? = withContext(Dispatchers.IO) {
+        val apiKey = key()
+        if (apiKey.isBlank()) return@withContext null
+        val prompt = "Describe this photo in one plain, factual sentence (max 20 words) for a blind person using a screen reader. " +
+                "No emojis, no hashtags, do not start with 'This image shows'. Return only the sentence."
+        callGeminiApi(prompt, apiKey, android.util.Base64.encodeToString(jpeg, android.util.Base64.NO_WRAP))?.trim()?.take(200)
+    }
+
     /** true = adult/graphic image, false = fine, null = could not check (AI off or busy). */
     fun canCheckImages(): Boolean = key().isNotBlank()
 

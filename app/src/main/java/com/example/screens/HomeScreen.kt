@@ -76,8 +76,32 @@ fun HomeScreen(
     onRefresh: () -> Unit = {},
     onSaveNote: (text: String, song: com.example.util.MusicTrack?) -> Unit = { _, _ -> },
     onNotInterested: (String) -> Unit = {},
-    onRepost: (Post) -> Unit = {}
+    onRepost: (Post) -> Unit = {},
+    onHashtagClick: (String) -> Unit = {},
+    savedFolders: Map<String, String> = emptyMap(),
+    onSaveToFolder: (String, String) -> Unit = { _, _ -> }
 ) {
+    var folderForPost by remember { mutableStateOf<String?>(null) }
+    var newFolder by remember { mutableStateOf("") }
+    if (folderForPost != null) {
+        AlertDialog(
+            onDismissRequest = { folderForPost = null; newFolder = "" },
+            title = { Text("Save to folder") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    val names = (savedFolders.values.toSet() + "Favorites").toList()
+                    names.forEach { n ->
+                        TextButton(onClick = { onSaveToFolder(folderForPost!!, n); folderForPost = null }) { Text(n) }
+                    }
+                    OutlinedTextField(value = newFolder, onValueChange = { newFolder = it }, label = { Text("New folder") }, singleLine = true)
+                }
+            },
+            confirmButton = {
+                TextButton(enabled = newFolder.isNotBlank(), onClick = { onSaveToFolder(folderForPost!!, newFolder); folderForPost = null; newFolder = "" }) { Text("Create") }
+            },
+            dismissButton = { TextButton(onClick = { folderForPost = null; newFolder = "" }) { Text("Cancel") } }
+        )
+    }
     var followingOnly by remember { mutableStateOf(false) }
     var showNoteDialog by remember { mutableStateOf(false) }
     if (showNoteDialog) {
@@ -306,6 +330,8 @@ fun HomeScreen(
                             onAuthorClick = { onAuthorClick(post.author.username) },
                             onNotInterested = { onNotInterested(post.id) },
                             onRepost = { onRepost(post) },
+                            onHashtagClick = onHashtagClick,
+                            onSaveToFolder = { folderForPost = post.id },
                             modifier = Modifier.padding(horizontal = 14.dp)
                         )
                         if (post.author.id.isNotBlank() && post.author.id != currentUser.id && !post.author.isOfficial && !post.author.isFollowing) {

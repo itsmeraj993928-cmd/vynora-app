@@ -1085,6 +1085,17 @@ class VynoraRepository(
         }
     }
 
+    /** Sends a MENTION notification to every @username found in [text] (max 5). */
+    suspend fun notifyMentions(me: User, text: String, postId: String) {
+        try {
+            val names = Regex("@([A-Za-z0-9_.]{2,30})").findAll(text).map { it.groupValues[1] }.distinct().take(5).toList()
+            for (n in names) {
+                val u = findUserByUsername(n) ?: continue
+                writeNotification("mention_${postId}_${u.id}_${me.id}", u.id, NotificationType.MENTION, me, text.take(60), postId)
+            }
+        } catch (e: Exception) { Log.w("VynoraRepo", "notifyMentions failed", e) }
+    }
+
     suspend fun getUserAvatar(userId: String): String = loadUserCached(userId).avatarUrl
 
     suspend fun markNotificationsRead(ids: List<String>) {

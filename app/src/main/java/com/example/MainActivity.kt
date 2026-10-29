@@ -297,13 +297,18 @@ fun VynoraApp(viewModel: VynoraViewModel) {
                                         onRefresh = { viewModel.refreshAll() },
                                         onSaveNote = { t, sg -> viewModel.saveNote(t, sg) },
                                         onNotInterested = { id -> viewModel.notInterested(id) },
-                                        onRepost = { p -> viewModel.repostPost(p) }
+                                        onRepost = { p -> viewModel.repostPost(p) },
+                                        onHashtagClick = { t -> viewModel.openHashtag(t) },
+                                        savedFolders = uiState.savedFolders,
+                                        onSaveToFolder = { id, f -> viewModel.saveToFolder(id, f) }
                                     )
                                 }
                                 MainTab.EXPLORE -> {
                                     ExploreScreen(
                                         isRefreshing = isRefreshing,
                                         onRefresh = { viewModel.refreshAll() },
+                                        initialQuery = uiState.pendingExploreQuery,
+                                        onQueryConsumed = { viewModel.clearExploreQuery() },
                                         posts = uiState.posts.filter { it.author.id != uiState.currentUser?.id },
                                         isDarkMode = uiState.isDarkMode,
                                         onUserClick = { username -> viewModel.openUserProfileByUsername(username) },
@@ -371,6 +376,7 @@ fun VynoraApp(viewModel: VynoraViewModel) {
                                 MainTab.PROFILE -> {
                                     ProfileScreen(
                                         user = uiState.currentUser ?: com.example.model.User(),
+                                        savedFolders = uiState.savedFolders,
                                         posts = uiState.posts,
                                         clips = uiState.clips,
                                         isDarkMode = uiState.isDarkMode,
@@ -470,7 +476,8 @@ fun VynoraApp(viewModel: VynoraViewModel) {
                     chats = uiState.chats,
                     isDarkMode = uiState.isDarkMode,
                     onOpenConversation = { id -> viewModel.navigateTo(ScreenDestination.ChatRoom(id)) },
-                    onBack = { viewModel.navigateBack() }
+                    onBack = { viewModel.navigateBack() },
+                    isRequest = { c -> viewModel.isMessageRequest(c) }
                 )
             }
             is ScreenDestination.ChatRoom -> {
