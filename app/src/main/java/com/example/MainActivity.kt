@@ -41,6 +41,14 @@ import com.example.viewmodel.ScreenDestination
 import com.example.viewmodel.VynoraViewModel
 
 open class MainActivity : ComponentActivity() {
+    private val pendingLink = androidx.compose.runtime.mutableStateOf<android.net.Uri?>(null)
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        pendingLink.value = intent.data
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         installCrashCatcher()
@@ -52,9 +60,23 @@ open class MainActivity : ComponentActivity() {
             Log.e("MainActivity", "FirebaseApp init check: ${e.message}", e)
         }
         enableEdgeToEdge()
+        pendingLink.value = intent?.data
         setContent {
             val viewModel: VynoraViewModel = viewModel()
             val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+            val link = pendingLink.value
+            LaunchedEffect(link, uiState.isLoggedIn, uiState.posts.size, uiState.clips.size) {
+                if (link != null && uiState.isLoggedIn) {
+                    val seg = link.pathSegments
+                    val id = seg.lastOrNull()
+                    if (link.scheme == "vynora" && id != null) {
+                        when (link.host) {
+                            "p" -> { pendingLink.value = null; viewModel.openPostViewer(id) }
+                            "c" -> { pendingLink.value = null; viewModel.navigateTo(ScreenDestination.ClipViewer(id, "")) }
+                        }
+                    }
+                }
+            }
 
             CompositionLocalProvider(LocalLayoutDirection provides uiState.currentLanguage.layoutDirection) {
                 VynoraTheme(darkTheme = uiState.isDarkMode) {
@@ -265,7 +287,8 @@ fun VynoraApp(viewModel: VynoraViewModel) {
                                         isRefreshing = isRefreshing,
                                         onRefresh = { viewModel.refreshAll() },
                                         onSaveNote = { t, sg -> viewModel.saveNote(t, sg) },
-                                        onNotInterested = { id -> viewModel.notInterested(id) }
+                                        onNotInterested = { id -> viewModel.notInterested(id) },
+                                        onRepost = { p -> viewModel.repostPost(p) }
                                     )
                                 }
                                 MainTab.EXPLORE -> {
@@ -542,6 +565,7 @@ fun VynoraApp(viewModel: VynoraViewModel) {
                     onOpenLegalDoc = { doc -> viewModel.navigateTo(ScreenDestination.Legal(doc)) },
                     canImportReels = uiState.currentUser?.let { it.role == "ADMIN" || it.email.equals("itsmeraj993928@gmail.com", ignoreCase = true) } == true,
                     onImportReels = { topic, n, music, prog, done -> viewModel.importPixabayReels(topic, n, music, prog, done) },
+                    onDeleteImportedReels = { done -> viewModel.deleteImportedReels(done) },
                     privateAccount = uiState.currentUser?.isPrivateAccount == true,
                     onPrivateChange = { viewModel.setPrivateAccount(it) },
                     onDeleteAccount = { viewModel.deleteMyAccount() },
@@ -814,8 +838,8 @@ fun VynoraApp(viewModel: VynoraViewModel) {
 
         // 2. Share sheet for posts (Instagram style: search + people grid + quick actions)
         uiState.activeSharePost?.let { sharePost ->
-            val postLink = "https://vynora.io/p/${sharePost.id}"
-            val postShareText = "Check out this post by @${sharePost.author.username} on VYNORA: $postLink"
+            val postLink = "vynora://p/${sharePost.id}"
+            val postShareText = "Check out this post by @${sharePost.author.username} on VYNORA: $postLink\nGet the app: https://github.com/itsmeraj993928-cmd/vynora-app/releases/latest/download/vynora.apk"
             ClipShareSheet(
                 isDarkMode = uiState.isDarkMode,
                 loadTargets = { viewModel.loadShareTargets() },

@@ -202,6 +202,7 @@ fun CreateStudioScreen(
 
     var showFilterStrip by remember { mutableStateOf(false) }
     var showDrafts by remember { mutableStateOf(false) }
+    var postRatio by remember { mutableStateOf(0) } // 0 original, 1 = 1:1, 2 = 4:5
     var drafts by remember { mutableStateOf(com.example.util.DraftStore.list(context)) }
     BackHandler(enabled = step > 0) {
         step = when (step) {
@@ -445,16 +446,18 @@ fun CreateStudioScreen(
                                 add("POLL:" + pollQ.trim().replace("|", " ") + "|" + pollA.trim().replace("|", " ") + "|" + pollB.trim().replace("|", " "))
                             }
                         }
+                        val croppedUri = if (!p.isVideo && mode == CreateMode.POST && postRatio != 0)
+                            (cropToRatio(context, p.uri, if (postRatio == 1) 1f else 0.8f) ?: p.uri) else p.uri
                         val uploadUri = if (!p.isVideo && mode != CreateMode.CLIP && selectedFilter != "Original")
-                            (bakeFilter(context, p.uri, selectedFilter) ?: p.uri) else p.uri
+                            (bakeFilter(context, croppedUri, selectedFilter) ?: croppedUri) else croppedUri
                         onStartBackgroundUpload(
                             kindName, uploadUri, finalCaption, finalTags, location.ifBlank { null },
                             selectedFilter, visibility,
-                            if (mode == CreateMode.MOMENT || mode == CreateMode.CLIP) (selectedSong?.pack() ?: "Original audio") else "Original audio",
+                            selectedSong?.pack() ?: "Original audio",
                             isCloseFriends, flags
                         )
                         selectedSong = null
-                        pollQ = ""
+                        pollQ = ""; postRatio = 0
                         picked = null; pickedSizeMb = 0f; caption = ""; location = ""; selectedFilter = "Original"
                         hideLikes = false; hideShares = false; commentsOff = false; confirmSafeContent = false
                         step = 0
@@ -780,6 +783,15 @@ fun CreateStudioScreen(
                 val cf = StudioFilters.matrix(selectedFilter)?.let {
                     androidx.compose.ui.graphics.ColorFilter.colorMatrix(androidx.compose.ui.graphics.ColorMatrix(it))
                 }
+                val natural by produceState(1f, p?.uri) {
+                    value = withContext(Dispatchers.IO) {
+                        try {
+                            val o = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                            p?.let { context.contentResolver.openInputStream(it.uri)?.use { s -> android.graphics.BitmapFactory.decodeStream(s, null, o) } }
+                            if (o.outWidth > 0 && o.outHeight > 0) (o.outWidth.toFloat() / o.outHeight).coerceIn(0.5f, 1.91f) else 1f
+                        } catch (e: Exception) { 1f }
+                    }
+                }
                 fun needPhoto(action: () -> Unit) {
                     if (p != null && p.isVideo) onToast("Draw & text work on photos only") else action()
                 }
@@ -788,7 +800,7 @@ fun CreateStudioScreen(
                         GalleryThumb(
                             p.uri, p.isVideo,
                             if (isStory) Modifier.fillMaxSize().padding(top = 56.dp, bottom = 170.dp, start = 6.dp, end = 6.dp).clip(RoundedCornerShape(20.dp))
-                            else Modifier.align(Alignment.Center).fillMaxWidth().aspectRatio(1f),
+                            else Modifier.align(Alignment.Center).fillMaxWidth().aspectRatio(when (postRatio) { 1 -> 1f; 2 -> 0.8f; else -> natural }),
                             px = 1080, colorFilter = cf
                         )
                     }
@@ -917,6 +929,9 @@ fun CreateStudioScreen(
                                 BottomTool(Icons.Outlined.TextFields, "Text") { needPhoto { showEditor = true } }
                                 BottomTool(Icons.Outlined.AutoAwesome, "Filter") { showFilterStrip = !showFilterStrip }
                                 BottomTool(Icons.Outlined.Brush, "Edit") { needPhoto { showEditor = true } }
+                                BottomTool(Icons.Outlined.Crop, when (postRatio) { 1 -> "1:1"; 2 -> "4:5"; else -> "Ratio" }) {
+                                    needPhoto { postRatio = (postRatio + 1) % 3 }
+                                }
                             }
                             Row(
                                 modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp),

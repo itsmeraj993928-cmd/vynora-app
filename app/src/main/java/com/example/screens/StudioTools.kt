@@ -102,6 +102,17 @@ internal fun bakeFilter(ctx: Context, uri: Uri, filterName: String): Uri? {
     return saveJpeg(ctx, out, "vn_filt")
 }
 
+/** Centre-crops a photo to width/height = ratio (e.g. 1f or 0.8f). Returns null on failure. */
+internal fun cropToRatio(ctx: Context, uri: Uri, ratio: Float): Uri? {
+    val src = decodeScaled(ctx, uri, 2000) ?: return null
+    val cur = src.width.toFloat() / src.height
+    val w: Int; val h: Int
+    if (cur > ratio) { h = src.height; w = (h * ratio).toInt() } else { w = src.width; h = (w / ratio).toInt() }
+    val x = (src.width - w) / 2; val y = (src.height - h) / 2
+    val out = Bitmap.createBitmap(src, x.coerceAtLeast(0), y.coerceAtLeast(0), w.coerceAtMost(src.width), h.coerceAtMost(src.height))
+    return saveJpeg(ctx, out, "vn_crop")
+}
+
 /** Small JPEG of the picked media, for the AI to look at. */
 internal fun jpegForAi(ctx: Context, uri: Uri, isVideo: Boolean): ByteArray? {
     val bmp: Bitmap? = if (isVideo) {

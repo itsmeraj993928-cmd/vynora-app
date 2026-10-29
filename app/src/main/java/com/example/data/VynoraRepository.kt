@@ -856,6 +856,26 @@ class VynoraRepository(
         }
     }
 
+    suspend fun deleteImportedClips(): Int {
+        var total = 0
+        try {
+            while (true) {
+                val snap = db.collection("clips")
+                    .whereGreaterThanOrEqualTo(com.google.firebase.firestore.FieldPath.documentId(), "px_")
+                    .whereLessThan(com.google.firebase.firestore.FieldPath.documentId(), "px`")
+                    .limit(300).get().await()
+                if (snap.isEmpty) break
+                val batch = db.batch()
+                snap.documents.forEach { batch.delete(it.reference) }
+                batch.commit().await()
+                total += snap.size()
+            }
+        } catch (e: Exception) {
+            Log.e("VynoraRepository", "deleteImportedClips: ${e.message}", e)
+        }
+        return total
+    }
+
     suspend fun deleteClip(clipId: String) {
         try {
             db.collection("clips").document(clipId).delete().await()

@@ -217,7 +217,7 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
 
     /** Hidden from everyone (except the owner and admins) once 3 different people reported it. */
     private fun reportOk(count: Int, authorId: String, me: String): Boolean =
-        count < 3 || authorId == me || _uiState.value.currentUser?.role == "ADMIN"
+        count < 5 || authorId == me || _uiState.value.currentUser?.role == "ADMIN"
 
     private fun blockedPrefs() = getApplication<Application>().getSharedPreferences("vynora_blocked", android.content.Context.MODE_PRIVATE)
     private fun mutedPrefs() = getApplication<Application>().getSharedPreferences("vynora_muted", android.content.Context.MODE_PRIVATE)
@@ -1172,7 +1172,7 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun sharePostToUsers(post: Post, targets: List<User>) {
-        sendToUsers(targets, "Shared post: https://vynora.io/p/${post.id}", "Post")
+        sendToUsers(targets, "Shared post: vynora://p/${post.id}", "Post")
     }
 
     /** Re-share a photo post to my own story. */
@@ -1656,7 +1656,8 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
                                 caption, hashtags, listOf(url), location, filterName,
                                 cloudinaryPublicId = publicId,
                                 cloudinaryResourceType = if (isVideo) "video" else "image",
-                                visibility = visibility
+                                visibility = visibility,
+                                audioTrack = com.example.util.MusicTrack.unpack(music).first.takeIf { it.isNotBlank() && it != "Original audio" }
                             )
                         }
                         _uploadStatus.value = null
@@ -1816,7 +1817,8 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
         filterName: String?,
         cloudinaryPublicId: String = "",
         cloudinaryResourceType: String = "image",
-        visibility: String = "PUBLIC"
+        visibility: String = "PUBLIC",
+        audioTrack: String? = null
     ) {
         val user = _uiState.value.currentUser ?: return
         bumpStreak()
@@ -1835,7 +1837,8 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
             filterApplied = filterName,
             cloudinaryPublicId = cloudinaryPublicId,
             cloudinaryResourceType = cloudinaryResourceType,
-            visibility = visibility
+            visibility = visibility,
+            audioTrack = audioTrack
         )
 
         viewModelScope.launch {
@@ -2135,6 +2138,30 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
         _uiState.update { st -> st.copy(reports = st.reports.map { if (it.id == id) it.copy(status = action) else it }) }
         viewModelScope.launch { repository.updateReportStatus(id, action) }
         showToast("Report marked as $action")
+    }
+
+    /** Repost: new post by me with the same media, credit to the original creator. */
+    fun repostPost(post: Post) {
+        val user = _uiState.value.currentUser ?: return
+        if (post.author.id == user.id) { showToast("This is already your post"); return }
+        val credit = "🔁 Reposted from @${post.author.username}"
+        publishPost(
+            caption = if (post.caption.isBlank()) credit else credit + "\n" + post.caption,
+            hashtags = post.hashtags, mediaUrls = post.mediaUrls, location = post.location,
+            filterName = post.filterApplied, cloudinaryPublicId = "",
+            cloudinaryResourceType = post.cloudinaryResourceType, visibility = "PUBLIC", audioTrack = post.audioTrack
+        )
+    }
+
+    /** Admin: remove every reel created by the Pixabay importer (ids start with px_). */
+    fun deleteImportedReels(onDone: (Int) -> Unit) {
+        val user = _uiState.value.currentUser ?: return
+        if (user.role != "ADMIN" && !user.email.equals("itsmeraj993928@gmail.com", ignoreCase = true)) return
+        viewModelScope.launch {
+            val n = repository.deleteImportedClips()
+            _uiState.update { st -> st.copy(clips = st.clips.filterNot { it.id.startsWith("px_") }) }
+            onDone(n)
+        }
     }
 
     fun deleteMyPost(postId: String) {

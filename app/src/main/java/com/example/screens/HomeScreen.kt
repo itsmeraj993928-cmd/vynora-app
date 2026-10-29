@@ -75,7 +75,8 @@ fun HomeScreen(
     isRefreshing: Boolean = false,
     onRefresh: () -> Unit = {},
     onSaveNote: (text: String, song: com.example.util.MusicTrack?) -> Unit = { _, _ -> },
-    onNotInterested: (String) -> Unit = {}
+    onNotInterested: (String) -> Unit = {},
+    onRepost: (Post) -> Unit = {}
 ) {
     var followingOnly by remember { mutableStateOf(false) }
     var showNoteDialog by remember { mutableStateOf(false) }
@@ -304,6 +305,7 @@ fun HomeScreen(
                             onDeleteClick = { postToDelete = post.id },
                             onAuthorClick = { onAuthorClick(post.author.username) },
                             onNotInterested = { onNotInterested(post.id) },
+                            onRepost = { onRepost(post) },
                             modifier = Modifier.padding(horizontal = 14.dp)
                         )
                         if (post.author.id.isNotBlank() && post.author.id != currentUser.id && !post.author.isOfficial && !post.author.isFollowing) {

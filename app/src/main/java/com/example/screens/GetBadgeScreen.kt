@@ -51,7 +51,7 @@ fun GetBadgeScreen(
     val cardBg = if (isDarkMode) Color(0xFF0F121E) else Color(0xFFFFFFFF)
     val cardBorder = if (isDarkMode) Color(0x2800D1FF) else Color(0x1F000000)
 
-    val referralLink = "https://vynora.io/invite/${user.referralCode}"
+    val referralLink = "https://github.com/itsmeraj993928-cmd/vynora-app/releases/latest/download/vynora.apk"
 
     Column(
         modifier = modifier

@@ -54,7 +54,8 @@ fun PostCard(
     modifier: Modifier = Modifier,
     isOwner: Boolean = false,
     onDeleteClick: () -> Unit = {},
-    onNotInterested: (() -> Unit)? = null
+    onNotInterested: (() -> Unit)? = null,
+    onRepost: (() -> Unit)? = null
 ) {
     var showBigHeart by remember { mutableStateOf(false) }
     var menuExpanded by remember { mutableStateOf(false) }
@@ -147,6 +148,16 @@ fun PostCard(
                             }
                         )
                     } else {
+                        if (onRepost != null) {
+                            DropdownMenuItem(
+                                text = { Text("Repost") },
+                                leadingIcon = { Icon(Icons.Outlined.Share, contentDescription = null) },
+                                onClick = {
+                                    menuExpanded = false
+                                    onRepost()
+                                }
+                            )
+                        }
                         if (onNotInterested != null) {
                             DropdownMenuItem(
                                 text = { Text("Not interested") },
