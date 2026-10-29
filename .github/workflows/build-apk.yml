@@ -42,13 +42,17 @@ jobs:
           if [ -n "$KEYSTORE_B64" ] && [ -n "$STORE_PASSWORD" ]; then
             echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
             export KEYSTORE_PATH="$RUNNER_TEMP/release.jks"
-            gradle assembleRelease --no-daemon --no-watch-fs
+            set -o pipefail; gradle assembleRelease --no-daemon --no-watch-fs 2>&1 | tee build.log
             cp app/build/outputs/apk/release/app-release.apk vynora.apk
             echo "SIGNED=true" >> "$GITHUB_ENV"
           else
-            gradle assembleDebug --no-daemon --no-watch-fs
+            set -o pipefail; gradle assembleDebug --no-daemon --no-watch-fs 2>&1 | tee build.log
             cp app/build/outputs/apk/debug/app-debug.apk vynora.apk
           fi
+      - name: Show compile errors
+        if: failure()
+        run: |
+          grep -E "^e: |error:|Caused by|What went wrong" -A2 build.log | head -60 | while IFS= read -r l; do echo "::error::${l:0:300}"; done
       - uses: actions/upload-artifact@v4
         with:
           name: app-debug
