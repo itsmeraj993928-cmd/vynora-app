@@ -481,6 +481,17 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
         showToast("Saved to \"$name\"")
     }
 
+    private val viewedThisSession = HashSet<String>()
+
+    /** Counts one view when a reel is shown on screen (not for my own reels). */
+    fun recordClipView(clipId: String) {
+        val me = _uiState.value.currentUser?.id ?: return
+        val clip = _uiState.value.clips.firstOrNull { it.id == clipId } ?: return
+        if (clip.author.id == me || !viewedThisSession.add(clipId)) return
+        _uiState.update { st -> st.copy(clips = st.clips.map { if (it.id == clipId) it.copy(viewsCount = it.viewsCount + 1) else it }) }
+        viewModelScope.launch { repository.bumpClipViews(clipId) }
+    }
+
     fun openHashtag(tag: String) {
         _uiState.update { it.copy(pendingExploreQuery = tag) }
         selectTab(MainTab.EXPLORE)

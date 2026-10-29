@@ -917,6 +917,13 @@ class VynoraRepository(
             .documents.mapNotNull { it.toObject(com.example.model.AuditEntry::class.java) }
     } catch (e: Exception) { emptyList() }
 
+    /** +1 view on a reel (one per person per app session is enforced in the ViewModel). */
+    suspend fun bumpClipViews(clipId: String) {
+        try {
+            db.collection("clips").document(clipId).update("viewsCount", com.google.firebase.firestore.FieldValue.increment(1)).await()
+        } catch (e: Exception) { Log.w("VynoraRepo", "bumpClipViews failed", e) }
+    }
+
     suspend fun deleteClip(clipId: String) {
         try {
             db.collection("clips").document(clipId).delete().await()

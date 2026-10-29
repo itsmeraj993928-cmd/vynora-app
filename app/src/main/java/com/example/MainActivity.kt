@@ -349,6 +349,7 @@ fun VynoraApp(viewModel: VynoraViewModel) {
                                 }
                                 MainTab.CLIPS -> {
                                     ClipsScreen(
+                                        onView = { id -> viewModel.recordClipView(id) },
                                         currentUserId = uiState.currentUser?.id ?: "",
                                         onDeleteClip = { clipId -> viewModel.deleteMyClip(clipId) },
                                         clips = uiState.clips,
@@ -716,6 +717,7 @@ fun VynoraApp(viewModel: VynoraViewModel) {
                 val authorClips = if (screen.authorId.isBlank()) uiState.clips else uiState.clips.filter { it.author.id == screen.authorId }
                 val startAt = authorClips.indexOfFirst { it.id == screen.clipId }.coerceAtLeast(0)
                 ClipsScreen(
+                                        onView = { id -> viewModel.recordClipView(id) },
                     currentUserId = uiState.currentUser?.id ?: "",
                     onDeleteClip = { clipId -> viewModel.deleteMyClip(clipId); viewModel.navigateBack() },
                     clips = authorClips,
