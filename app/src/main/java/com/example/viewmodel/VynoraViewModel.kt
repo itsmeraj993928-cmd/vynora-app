@@ -86,7 +86,9 @@ data class VynoraUiState(
     val isAiGenerating: Boolean = false,
     val keywordFilterActive: Boolean = true,
     val offensiveKeywords: List<String> = listOf("scam", "cheat", "hate", "idiot", "fake", "abuse"),
-    val deviceId: String = ""
+    val deviceId: String = "",
+    val pendingExploreQuery: String = "",
+    val savedFolders: Map<String, String> = emptyMap()
 )
 
 private const val CALL_SERVER_BASE = "https://meet.jit.si"
@@ -217,7 +219,7 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
 
     /** Hidden from everyone (except the owner and admins) once 3 different people reported it. */
     private fun reportOk(count: Int, authorId: String, me: String): Boolean =
-        count < 3 || authorId == me || _uiState.value.currentUser?.role == "ADMIN"
+        count < 5 || authorId == me || _uiState.value.currentUser?.role == "ADMIN"
 
     private fun blockedPrefs() = getApplication<Application>().getSharedPreferences("vynora_blocked", android.content.Context.MODE_PRIVATE)
     private fun mutedPrefs() = getApplication<Application>().getSharedPreferences("vynora_muted", android.content.Context.MODE_PRIVATE)
@@ -229,6 +231,7 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
 
     private fun startDataObservations(userId: String) {
         observeJob?.cancel()
+        _uiState.update { it.copy(savedFolders = loadFolders()) }
         likedIds = emptySet()
         likedClipIds = emptySet()
         observeJob = viewModelScope.launch {
@@ -460,6 +463,37 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
                 selectedTab = if (destination is ScreenDestination.Main) destination.tab else current.selectedTab
             )
         }
+    }
+
+    private fun folderPrefs() = getApplication<Application>().getSharedPreferences("vynora_folders", android.content.Context.MODE_PRIVATE)
+    private fun loadFolders(): Map<String, String> = try {
+        folderPrefs().all.mapNotNull { (k, v) -> (v as? String)?.let { k to it } }.toMap()
+    } catch (e: Exception) { emptyMap() }
+
+    /** Put a post into one of my saved folders (saves it first if needed). */
+    fun saveToFolder(postId: String, folder: String) {
+        val name = folder.trim().take(24)
+        if (name.isBlank()) return
+        val post = _uiState.value.posts.firstOrNull { it.id == postId } ?: return
+        if (!post.isSaved) toggleSavePost(postId)
+        try { folderPrefs().edit().putString(postId, name).apply() } catch (e: Exception) { }
+        _uiState.update { it.copy(savedFolders = loadFolders()) }
+        showToast("Saved to \"$name\"")
+    }
+
+    fun openHashtag(tag: String) {
+        _uiState.update { it.copy(pendingExploreQuery = tag) }
+        selectTab(MainTab.EXPLORE)
+    }
+
+    fun clearExploreQuery() { _uiState.update { it.copy(pendingExploreQuery = "") } }
+
+    /** A chat is a "request" when someone I don't follow wrote to me and I never replied. */
+    fun isMessageRequest(conv: ChatConversation): Boolean {
+        val me = _uiState.value.currentUser?.id ?: return false
+        val other = conv.participant.id
+        if (conv.isGroup || other.isBlank() || other == VynoraOfficial.OFFICIAL_USER_ID || conv.participant.isOfficial) return false
+        return conv.messages.isNotEmpty() && conv.messages.none { it.senderId == me } && other !in followingIds
     }
 
     fun selectTab(tab: MainTab) {
@@ -968,6 +1002,7 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
 
     fun addComment(postId: String, text: String, replyToId: String? = null) {
         if (text.isBlank()) return
+        if (restrictedNow()) return
         val user = _uiState.value.currentUser ?: return
 
         if (com.example.util.ContentFilter.isBlocked(text)) {
@@ -1009,7 +1044,10 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
             state.copy(posts = updated)
         }
         val postAuthorId = _uiState.value.posts.firstOrNull { it.id == postId }?.author?.id ?: ""
-        viewModelScope.launch { repository.saveComment(postId, newComment, postAuthorId) }
+        viewModelScope.launch {
+            repository.saveComment(postId, newComment, postAuthorId)
+            if (text.contains('@')) repository.notifyMentions(user, text, postId)
+        }
     }
 
     fun toggleLikeComment(postId: String, commentId: String) {
@@ -1172,7 +1210,7 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun sharePostToUsers(post: Post, targets: List<User>) {
-        sendToUsers(targets, "Shared post: https://vynora.io/p/${post.id}", "Post")
+        sendToUsers(targets, "Shared post: vynora://p/${post.id}", "Post")
     }
 
     /** Re-share a photo post to my own story. */
@@ -1588,6 +1626,7 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
             showToast("Your caption has words that aren't allowed on VYNORA (adult or abusive). Please change it.")
             return
         }
+        if (restrictedNow()) return
         if (!com.example.util.NetworkMonitor.online) {
             showToast("No internet. Connect to Wi-Fi or mobile data and try again.")
             return
@@ -1656,7 +1695,12 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
                                 caption, hashtags, listOf(url), location, filterName,
                                 cloudinaryPublicId = publicId,
                                 cloudinaryResourceType = if (isVideo) "video" else "image",
-                                visibility = visibility
+                                visibility = visibility,
+                                audioTrack = com.example.util.MusicTrack.unpack(music).first.takeIf { it.isNotBlank() && it != "Original audio" },
+                                altText = if (isVideo || !com.example.service.GeminiService.canCheckImages()) "" else (
+                                    kotlinx.coroutines.withTimeoutOrNull(8000L) {
+                                        com.example.screens.jpegForAi(app, uri, false)?.let { b -> com.example.service.GeminiService.describeForAlt(b) }
+                                    } ?: "")
                             )
                         }
                         _uploadStatus.value = null
@@ -1816,7 +1860,9 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
         filterName: String?,
         cloudinaryPublicId: String = "",
         cloudinaryResourceType: String = "image",
-        visibility: String = "PUBLIC"
+        visibility: String = "PUBLIC",
+        audioTrack: String? = null,
+        altText: String = ""
     ) {
         val user = _uiState.value.currentUser ?: return
         bumpStreak()
@@ -1835,7 +1881,9 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
             filterApplied = filterName,
             cloudinaryPublicId = cloudinaryPublicId,
             cloudinaryResourceType = cloudinaryResourceType,
-            visibility = visibility
+            visibility = visibility,
+            audioTrack = audioTrack,
+            altText = altText
         )
 
         viewModelScope.launch {
@@ -1843,6 +1891,8 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
             if (err != null) {
                 _uiState.update { st -> st.copy(posts = st.posts.filterNot { it.id == newPost.id }) }
                 showToast("Post couldn't be saved: $err")
+            } else if (caption.contains('@')) {
+                repository.notifyMentions(user, caption, newPost.id)
             }
         }
 
@@ -1962,6 +2012,24 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
             })
         }
         viewModelScope.launch { repository.deleteChatMessage(conversationId, messageId, newLast) }
+    }
+
+    fun markChatSeen(conversationId: String) {
+        val me = _uiState.value.currentUser?.id ?: return
+        viewModelScope.launch { repository.markChatSeen(conversationId, me) }
+    }
+
+    fun editChatMessage(conversationId: String, messageId: String, text: String) {
+        val t = text.trim()
+        if (t.isBlank()) return
+        if (com.example.util.ContentFilter.isBlocked(t)) { showToast("This message contains words that are not allowed"); return }
+        _uiState.update { state ->
+            state.copy(chats = state.chats.map { conv ->
+                if (conv.id == conversationId) conv.copy(messages = conv.messages.map { if (it.id == messageId) it.copy(text = t, edited = true) else it })
+                else conv
+            })
+        }
+        viewModelScope.launch { repository.editChatMessage(conversationId, messageId, t) }
     }
 
     fun sendMessage(conversationId: String, text: String, isAudio: Boolean = false, audioDuration: String? = null) {
@@ -2131,10 +2199,84 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
         showToast("Profile updated successfully ✨")
     }
 
+    private fun isAdminUser(): Boolean = _uiState.value.currentUser?.let { it.role == "ADMIN" || it.email.equals("itsmeraj993928@gmail.com", ignoreCase = true) } == true
+
+    /** Admin: BAN, UNBAN, RESTRICT (7 days) or UNRESTRICT a user. Every action is written to the audit log. */
+    fun adminUserAction(username: String, action: String, onDone: (String) -> Unit = {}) {
+        val admin = _uiState.value.currentUser ?: return
+        if (!isAdminUser()) { onDone("Admins only"); return }
+        viewModelScope.launch {
+            val target = repository.findUserByUsername(username)
+            if (target == null) { onDone("User not found"); return@launch }
+            if (target.id == admin.id) { onDone("You can't do this to your own account"); return@launch }
+            val ok = when (action) {
+                "BAN" -> repository.setUserField(target.id, "isBanned", true)
+                "UNBAN" -> repository.setUserField(target.id, "isBanned", false)
+                "RESTRICT" -> repository.setUserField(target.id, "restrictedUntil", System.currentTimeMillis() + 7L * 24 * 3600 * 1000)
+                else -> repository.setUserField(target.id, "restrictedUntil", 0L)
+            }
+            if (ok) repository.addAudit(admin, action, "@${target.username}")
+            onDone(if (ok) "Done: $action @${target.username}" else "Failed. Publish the latest Firestore rules and try again.")
+        }
+    }
+
+    suspend fun loadAppeals() = repository.loadAppeals()
+    suspend fun loadAudit() = repository.loadAudit()
+
+    fun resolveAppeal(a: com.example.model.Appeal, approve: Boolean, onDone: () -> Unit = {}) {
+        val admin = _uiState.value.currentUser ?: return
+        if (!isAdminUser()) return
+        viewModelScope.launch {
+            if (approve) repository.setUserField(a.userId, "isBanned", false)
+            repository.resolveAppeal(a.id, if (approve) "APPROVED" else "REJECTED")
+            repository.addAudit(admin, if (approve) "APPEAL_APPROVED" else "APPEAL_REJECTED", "@${a.username}")
+            onDone()
+        }
+    }
+
+    fun submitAppeal(message: String, onDone: (Boolean) -> Unit) {
+        val user = _uiState.value.currentUser ?: return
+        if (message.isBlank()) { onDone(false); return }
+        viewModelScope.launch { onDone(repository.submitAppeal(user, message.trim())) }
+    }
+
+    private fun restrictedNow(): Boolean {
+        val u = _uiState.value.currentUser ?: return false
+        if (u.restrictedUntil > System.currentTimeMillis()) {
+            showToast("Your account is restricted for a few days. You can't post or comment right now.")
+            return true
+        }
+        return false
+    }
+
     fun resolveReport(id: String, action: String) {
         _uiState.update { st -> st.copy(reports = st.reports.map { if (it.id == id) it.copy(status = action) else it }) }
         viewModelScope.launch { repository.updateReportStatus(id, action) }
         showToast("Report marked as $action")
+    }
+
+    /** Repost: new post by me with the same media, credit to the original creator. */
+    fun repostPost(post: Post) {
+        val user = _uiState.value.currentUser ?: return
+        if (post.author.id == user.id) { showToast("This is already your post"); return }
+        val credit = "🔁 Reposted from @${post.author.username}"
+        publishPost(
+            caption = if (post.caption.isBlank()) credit else credit + "\n" + post.caption,
+            hashtags = post.hashtags, mediaUrls = post.mediaUrls, location = post.location,
+            filterName = post.filterApplied, cloudinaryPublicId = "",
+            cloudinaryResourceType = post.cloudinaryResourceType, visibility = "PUBLIC", audioTrack = post.audioTrack
+        )
+    }
+
+    /** Admin: remove every reel created by the Pixabay importer (ids start with px_). */
+    fun deleteImportedReels(onDone: (Int) -> Unit) {
+        val user = _uiState.value.currentUser ?: return
+        if (user.role != "ADMIN" && !user.email.equals("itsmeraj993928@gmail.com", ignoreCase = true)) return
+        viewModelScope.launch {
+            val n = repository.deleteImportedClips()
+            _uiState.update { st -> st.copy(clips = st.clips.filterNot { it.id.startsWith("px_") }) }
+            onDone(n)
+        }
     }
 
     fun deleteMyPost(postId: String) {

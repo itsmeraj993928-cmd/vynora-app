@@ -9,6 +9,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -66,6 +68,7 @@ fun ProfileScreen(
     onAddHighlight: (title: String, coverUrl: String) -> Unit = { _, _ -> },
     onToast: (String) -> Unit,
     savedAccounts: List<com.example.model.SavedAccount> = emptyList(),
+    savedFolders: Map<String, String> = emptyMap(),
     onSwitchAccount: (accountId: String, identifier: String) -> Unit = { _, _ -> },
     onOpenFollowList: (tab: Int) -> Unit = {},
     onAddAccount: () -> Unit = {},
@@ -130,7 +133,8 @@ fun ProfileScreen(
     }
 
     val userPosts = posts.filter { it.author.id == user.id || it.author.username == user.username }
-    val savedPosts = posts.filter { it.isSaved }
+    var selectedFolder by remember { mutableStateOf<String?>(null) }
+    val savedPosts = posts.filter { it.isSaved && (selectedFolder == null || savedFolders[it.id] == selectedFolder) }
 
     val screenBg = if (isDarkMode) Color(0xFF050509) else Color(0xFFF8FAFC)
     val cardBg = if (isDarkMode) Color(0xFF0F121E) else Color(0xFFFFFFFF)
@@ -657,6 +661,21 @@ fun ProfileScreen(
                         onClick = { selectedTab = 2 },
                         icon = { Icon(Icons.Filled.Bookmark, contentDescription = "Saved") }
                     )
+                }
+            }
+
+            // --- 4b. Saved folders ---
+            if (selectedTab == 2 && savedFolders.isNotEmpty()) {
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        FilterChip(selected = selectedFolder == null, onClick = { selectedFolder = null }, label = { Text("All") })
+                        savedFolders.values.toSet().forEach { f ->
+                            FilterChip(selected = selectedFolder == f, onClick = { selectedFolder = f }, label = { Text(f) })
+                        }
+                    }
                 }
             }
 

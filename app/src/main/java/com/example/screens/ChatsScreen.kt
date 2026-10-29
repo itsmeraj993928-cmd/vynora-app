@@ -58,7 +58,8 @@ fun ChatsScreen(
     isDarkMode: Boolean,
     onOpenConversation: (String) -> Unit,
     onBack: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    isRequest: (ChatConversation) -> Boolean = { false }
 ) {
     var searchQuery by remember { mutableStateOf("") }
     var selectedTab by remember { mutableStateOf(0) } // 0: Primary, 1: Requests
@@ -129,11 +130,21 @@ fun ChatsScreen(
 
         Spacer(modifier = Modifier.height(12.dp))
 
+        val requestCount = chats.count { isRequest(it) }
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            FilterChip(selected = selectedTab == 0, onClick = { selectedTab = 0 }, label = { Text("Primary") })
+            FilterChip(selected = selectedTab == 1, onClick = { selectedTab = 1 }, label = { Text("Requests ($requestCount)") })
+        }
+
         HorizontalDivider(color = if (isDarkMode) Color(0x22FFFFFF) else Color(0x1F000000))
 
         // --- 4. Chat List ---
-        val filteredChats = if (searchQuery.isBlank()) chats else {
-            chats.filter {
+        val tabChats = chats.filter { isRequest(it) == (selectedTab == 1) }
+        val filteredChats = if (searchQuery.isBlank()) tabChats else {
+            tabChats.filter {
                 it.participant.username.contains(searchQuery, ignoreCase = true) ||
                 it.lastMessage.text.contains(searchQuery, ignoreCase = true)
             }
@@ -274,8 +285,13 @@ fun ChatRoomScreen(
     onStartCall: (video: Boolean) -> Unit = {},
     onSendVoiceNote: (File, String) -> Unit = { _, _ -> },
     onDeleteMessage: (String) -> Unit = {},
+    onMarkSeen: () -> Unit = {},
+    onEditMessage: (String, String) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier
 ) {
+    var editingId by remember { mutableStateOf<String?>(null) }
+    var searchOpen by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
     val callContext = androidx.compose.ui.platform.LocalContext.current
     var messageInput by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
@@ -391,6 +407,10 @@ fun ChatRoomScreen(
     LaunchedEffect(conversation.messages.size) {
         listState.animateScrollToItem((conversation.messages.size - 1).coerceAtLeast(0))
     }
+    LaunchedEffect(conversation.id, conversation.messages.lastOrNull()?.id) { onMarkSeen() }
+    val shownMessages = if (searchQuery.isBlank()) conversation.messages
+        else conversation.messages.filter { it.text.contains(searchQuery.trim(), ignoreCase = true) }
+    val lastOwnId = conversation.messages.lastOrNull { it.senderId == currentUser.id }?.id
 
     val screenBg = if (isDarkMode) Color(0xFF050509) else Color(0xFFF8FAFC)
     val cardBg = if (isDarkMode) Color(0xFF0F121E) else Color(0xFFFFFFFF)
@@ -442,6 +462,9 @@ fun ChatRoomScreen(
             }
 
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                IconButton(onClick = { searchOpen = !searchOpen; if (!searchOpen) searchQuery = "" }) {
+                    Icon(imageVector = Icons.Outlined.Search, contentDescription = "Search", tint = if (isDarkMode) Color.White else Color(0xFF0F172A))
+                }
                 IconButton(onClick = { onStartCall(false) }) {
                     Icon(imageVector = Icons.Outlined.Call, contentDescription = "Call", tint = VynoraNeonCyan)
                 }
@@ -449,6 +472,16 @@ fun ChatRoomScreen(
                     Icon(imageVector = Icons.Outlined.Videocam, contentDescription = "Video", tint = VynoraNeonPink)
                 }
             }
+        }
+
+        if (searchOpen) {
+            OutlinedTextField(
+                value = searchQuery, onValueChange = { searchQuery = it },
+                placeholder = { Text("Search in this chat…", fontSize = 13.sp) },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+                shape = RoundedCornerShape(20.dp)
+            )
         }
 
         // --- 2. Messages List ---
@@ -461,7 +494,7 @@ fun ChatRoomScreen(
             contentPadding = PaddingValues(vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            items(conversation.messages, key = { it.id }) { msg ->
+            items(shownMessages, key = { it.id }) { msg ->
                 val isMe = msg.senderId == currentUser.id
                 Box(
                     modifier = Modifier.fillMaxWidth(),
@@ -572,7 +605,8 @@ fun ChatRoomScreen(
                         }
 
                         Text(
-                            text = msg.timestamp,
+                            text = msg.timestamp + (if (msg.edited) " • edited" else "") +
+                                (if (msg.id == lastOwnId && isMe && conversation.otherSeenAt >= msg.createdAt) " • Seen" else ""),
                             fontSize = 9.sp,
                             color = if (isDarkMode) Color(0xFF64748B) else Color(0xFF94A3B8),
                             modifier = Modifier.padding(top = 2.dp)
@@ -595,6 +629,20 @@ fun ChatRoomScreen(
                 horizontalArrangement = Arrangement.SpaceAround
             ) {
                 val menuMsg = conversation.messages.firstOrNull { it.id == msgId }
+                if (menuMsg != null && menuMsg.senderId == currentUser.id && !menuMsg.isAudio && menuMsg.text.isNotBlank()) {
+                    Text(
+                        text = "✏️ Edit",
+                        fontSize = 14.sp,
+                        modifier = Modifier
+                            .clickable {
+                                editingId = menuMsg.id
+                                messageInput = menuMsg.text
+                                showReactionMenuForMessageId = null
+                            }
+                            .padding(6.dp),
+                        color = if (isDarkMode) Color.White else Color(0xFF0F172A)
+                    )
+                }
                 if (menuMsg != null && menuMsg.senderId == currentUser.id) {
                     Text(
                         text = "🗑 Delete",
@@ -698,7 +746,7 @@ fun ChatRoomScreen(
             OutlinedTextField(
                 value = messageInput,
                 onValueChange = { messageInput = it },
-                placeholder = { Text("Message @${conversation.participant.username}...", fontSize = 13.sp) },
+                placeholder = { Text(if (editingId != null) "Edit message…" else "Message @${conversation.participant.username}...", fontSize = 13.sp) },
                 modifier = Modifier
                     .weight(1f)
                     .testTag("chat_message_input"),
@@ -736,7 +784,9 @@ fun ChatRoomScreen(
                     if (isRecordingAudio) {
                         stopRecording(true)
                     } else if (messageInput.isNotBlank()) {
-                        onSendMessage(messageInput, false, null)
+                        val eid = editingId
+                        if (eid != null) { onEditMessage(eid, messageInput); editingId = null }
+                        else onSendMessage(messageInput, false, null)
                         messageInput = ""
                     }
                 }

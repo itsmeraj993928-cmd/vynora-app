@@ -39,6 +39,7 @@ fun SettingsScreen(
     onDeleteAccount: () -> Unit = {},
     canImportReels: Boolean = false,
     onImportReels: (String, Int, Boolean, (Int) -> Unit, (Int, String) -> Unit) -> Unit = { _, _, _, _, _ -> },
+    onDeleteImportedReels: ((Int) -> Unit) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var showImport by remember { mutableStateOf(false) }
@@ -82,7 +83,15 @@ fun SettingsScreen(
                     })
                 }) { Text(if (importing) "Working..." else "Start import", color = VynoraNeonPink, fontWeight = FontWeight.Bold) }
             },
-            dismissButton = { TextButton(enabled = !importing, onClick = { showImport = false }) { Text("Close") } }
+            dismissButton = {
+                Row {
+                    TextButton(enabled = !importing, onClick = {
+                        importing = true
+                        onDeleteImportedReels { n -> importing = false; onToast("Deleted $n imported reels") }
+                    }) { Text("Delete all imported", color = Color(0xFFEF4444)) }
+                    TextButton(enabled = !importing, onClick = { showImport = false }) { Text("Close") }
+                }
+            }
         )
     }
     var isPrivateAccount by remember(privateAccount) { mutableStateOf(privateAccount) }

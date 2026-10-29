@@ -51,7 +51,8 @@ data class User(
     val isBlocked: Boolean = false,
     val isMuted: Boolean = false,
     val isCloseFriend: Boolean = false,
-    val isBanned: Boolean = false,
+    @get:com.google.firebase.firestore.PropertyName("isBanned") @set:com.google.firebase.firestore.PropertyName("isBanned") var isBanned: Boolean = false,
+    val restrictedUntil: Long = 0L,
     val deviceId: String = "",
     // Profile note (short status, disappears after 24 hours)
     val note: String = "",
@@ -133,7 +134,8 @@ data class Post(
     val audioTrack: String? = null,
     val cloudinaryPublicId: String = "",
     val cloudinaryResourceType: String = "image",
-    val visibility: String = "PUBLIC" // PUBLIC, FOLLOWERS, PRIVATE
+    val visibility: String = "PUBLIC", // PUBLIC, FOLLOWERS, PRIVATE
+    val altText: String = ""
 )
 
 data class Moment(
@@ -198,7 +200,8 @@ data class ChatMessage(
     val mediaUrl: String? = null,
     val reactionEmoji: String? = null,
     @get:com.google.firebase.firestore.PropertyName("isRead") @set:com.google.firebase.firestore.PropertyName("isRead") var isRead: Boolean = true,
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    val edited: Boolean = false
 )
 
 data class ChatConversation(
@@ -209,7 +212,8 @@ data class ChatConversation(
     val unreadCount: Int = 0,
     val isGroup: Boolean = false,
     val groupName: String? = null,
-    val updatedAt: Long = System.currentTimeMillis()
+    val updatedAt: Long = System.currentTimeMillis(),
+    val otherSeenAt: Long = 0L
 )
 
 enum class NotificationType {
@@ -292,3 +296,21 @@ fun User.activeStreak(): Int =
         lastStreakDay == com.example.util.DailyChallenge.yesterdayKey()) streakCount else 0
 
 fun User.postedToday(): Boolean = lastStreakDay == com.example.util.DailyChallenge.todayKey()
+
+
+data class Appeal(
+    val id: String = "",
+    val userId: String = "",
+    val username: String = "",
+    val message: String = "",
+    val status: String = "PENDING",
+    val createdAt: Long = System.currentTimeMillis()
+)
+
+data class AuditEntry(
+    val id: String = "",
+    val adminName: String = "",
+    val action: String = "",
+    val target: String = "",
+    val createdAt: Long = System.currentTimeMillis()
+)

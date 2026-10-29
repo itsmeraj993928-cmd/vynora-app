@@ -585,7 +585,8 @@ class VynoraRepository(
                                 participant = loadUserCached(otherUserId),
                                 messages = msgs,
                                 lastMessage = msgs.lastOrNull() ?: ChatMessage(text = lastMessageText, timestamp = "Recent"),
-                                updatedAt = updatedAt
+                                updatedAt = updatedAt,
+                                otherSeenAt = (doc.get("seen_$otherUserId") as? Number)?.toLong() ?: 0L
                             )
                         } catch (e: Exception) { null }
                     }
@@ -856,6 +857,66 @@ class VynoraRepository(
         }
     }
 
+    suspend fun deleteImportedClips(): Int {
+        var total = 0
+        try {
+            while (true) {
+                val snap = db.collection("clips")
+                    .whereGreaterThanOrEqualTo(com.google.firebase.firestore.FieldPath.documentId(), "px_")
+                    .whereLessThan(com.google.firebase.firestore.FieldPath.documentId(), "px`")
+                    .limit(300).get().await()
+                if (snap.isEmpty) break
+                val batch = db.batch()
+                snap.documents.forEach { batch.delete(it.reference) }
+                batch.commit().await()
+                total += snap.size()
+            }
+        } catch (e: Exception) {
+            Log.e("VynoraRepository", "deleteImportedClips: ${e.message}", e)
+        }
+        return total
+    }
+
+    suspend fun findUserByUsername(username: String): User? = try {
+        val clean = username.trim().removePrefix("@")
+        db.collection("users").whereEqualTo("username", clean).limit(1).get().await()
+            .documents.firstOrNull()?.toObject(User::class.java)
+    } catch (e: Exception) { null }
+
+    suspend fun setUserField(userId: String, field: String, value: Any): Boolean = try {
+        db.collection("users").document(userId).update(field, value).await(); true
+    } catch (e: Exception) { Log.w("VynoraRepo", "setUserField failed", e); false }
+
+    suspend fun addAudit(admin: User, action: String, target: String) {
+        try {
+            val id = "a_${System.currentTimeMillis()}"
+            db.collection("auditLogs").document(id).set(
+                mapOf("id" to id, "adminName" to admin.username, "adminId" to admin.id, "action" to action, "target" to target, "createdAt" to System.currentTimeMillis())
+            ).await()
+        } catch (e: Exception) { Log.w("VynoraRepo", "addAudit failed", e) }
+    }
+
+    suspend fun submitAppeal(user: User, message: String): Boolean = try {
+        val id = "ap_${user.id}"
+        db.collection("appeals").document(id).set(
+            mapOf("id" to id, "userId" to user.id, "username" to user.username, "message" to message.take(600), "status" to "PENDING", "createdAt" to System.currentTimeMillis())
+        ).await(); true
+    } catch (e: Exception) { Log.w("VynoraRepo", "submitAppeal failed", e); false }
+
+    suspend fun loadAppeals(): List<com.example.model.Appeal> = try {
+        db.collection("appeals").whereEqualTo("status", "PENDING").limit(50).get().await()
+            .documents.mapNotNull { it.toObject(com.example.model.Appeal::class.java) }.sortedByDescending { it.createdAt }
+    } catch (e: Exception) { emptyList() }
+
+    suspend fun resolveAppeal(id: String, status: String) {
+        try { db.collection("appeals").document(id).update("status", status).await() } catch (e: Exception) { }
+    }
+
+    suspend fun loadAudit(): List<com.example.model.AuditEntry> = try {
+        db.collection("auditLogs").orderBy("createdAt", Query.Direction.DESCENDING).limit(100).get().await()
+            .documents.mapNotNull { it.toObject(com.example.model.AuditEntry::class.java) }
+    } catch (e: Exception) { emptyList() }
+
     suspend fun deleteClip(clipId: String) {
         try {
             db.collection("clips").document(clipId).delete().await()
@@ -1022,6 +1083,17 @@ class VynoraRepository(
         } catch (e: Exception) {
             Log.w("VynoraRepo", "notification write failed", e)
         }
+    }
+
+    /** Sends a MENTION notification to every @username found in [text] (max 5). */
+    suspend fun notifyMentions(me: User, text: String, postId: String) {
+        try {
+            val names = Regex("@([A-Za-z0-9_.]{2,30})").findAll(text).map { it.groupValues[1] }.distinct().take(5).toList()
+            for (n in names) {
+                val u = findUserByUsername(n) ?: continue
+                writeNotification("mention_${postId}_${u.id}_${me.id}", u.id, NotificationType.MENTION, me, text.take(60), postId)
+            }
+        } catch (e: Exception) { Log.w("VynoraRepo", "notifyMentions failed", e) }
     }
 
     suspend fun getUserAvatar(userId: String): String = loadUserCached(userId).avatarUrl
@@ -1290,6 +1362,25 @@ class VynoraRepository(
             chatRef.collection("messages").document(msg.id).set(msg).await()
         } catch (e: Exception) {
             Log.w("VynoraRepo", "sendChatMessage failed", e)
+        }
+    }
+
+    /** The reader's "last seen" time lives on the chat document, so the sender can show "Seen". */
+    suspend fun markChatSeen(conversationId: String, userId: String) {
+        try {
+            db.collection("chats").document(conversationId).update("seen_$userId", System.currentTimeMillis()).await()
+        } catch (e: Exception) {
+            Log.w("VynoraRepo", "markChatSeen failed", e)
+        }
+    }
+
+    suspend fun editChatMessage(conversationId: String, messageId: String, text: String) {
+        try {
+            val chatRef = db.collection("chats").document(conversationId)
+            chatRef.collection("messages").document(messageId).update(mapOf("text" to text, "edited" to true)).await()
+            chatRef.update("updatedAt", System.currentTimeMillis()).await()
+        } catch (e: Exception) {
+            Log.w("VynoraRepo", "editChatMessage failed", e)
         }
     }
 
