@@ -47,8 +47,7 @@ object CloudinaryUploader {
         mimeType: String = "image/jpeg",
         filename: String = "upload_${System.currentTimeMillis()}.jpg",
         maxRetries: Int = 2,
-        onProgress: (Int) -> Unit = {},
-        fileName: String? = null
+        onProgress: (Int) -> Unit = {}
     ): Result<CloudinaryUploadResult> = withContext(Dispatchers.IO) {
         var attempt = 0
         var lastException: Exception? = null
@@ -141,7 +140,8 @@ object CloudinaryUploader {
         context: Context,
         uri: Uri,
         maxRetries: Int = 2,
-        onProgress: (Int) -> Unit = {}
+        onProgress: (Int) -> Unit = {},
+        fileName: String? = null
     ): Result<CloudinaryUploadResult> = withContext(Dispatchers.IO) {
         val resolver = context.contentResolver
         val guessedFromName: String? = when (uri.lastPathSegment?.substringAfterLast('.', "")?.lowercase()) {
