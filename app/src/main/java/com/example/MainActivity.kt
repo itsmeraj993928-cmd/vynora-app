@@ -184,6 +184,15 @@ fun VynoraApp(viewModel: VynoraViewModel) {
         }
     }
 
+    if (uiState.currentUser?.isBanned == true) {
+        BannedScreen(
+            isDarkMode = uiState.isDarkMode,
+            onSubmitAppeal = { msg, cb -> viewModel.submitAppeal(msg, cb) },
+            onLogout = { viewModel.logout() }
+        )
+        return
+    }
+
     Box(modifier = Modifier.fillMaxSize()) {
         // --- Main Screen Switching ---
         when (val screen = uiState.currentScreen) {
@@ -469,6 +478,8 @@ fun VynoraApp(viewModel: VynoraViewModel) {
                     onBack = { viewModel.navigateBack() },
                     onToast = { msg -> viewModel.showToast(msg) },
                     onDeleteMessage = { mid -> viewModel.deleteChatMessage(conversation.id, mid) },
+                    onMarkSeen = { viewModel.markChatSeen(conversation.id) },
+                    onEditMessage = { mid, t -> viewModel.editChatMessage(conversation.id, mid, t) },
                     onSendVoiceNote = { file, dur -> viewModel.sendVoiceNote(conversation.id, file, dur) },
                     onStartCall = { video ->
                         if (conversation.isGroup) viewModel.showToast("Calls work in one-to-one chats")
@@ -561,8 +572,12 @@ fun VynoraApp(viewModel: VynoraViewModel) {
                     isDarkMode = uiState.isDarkMode,
                     onResolveReport = { id, action -> viewModel.resolveReport(id, action) },
                     onRemovePost = { postId -> viewModel.removePostAsAdmin(postId) },
-                    onBanUser = { username -> viewModel.blockUser(username) },
-                    onBack = { viewModel.navigateBack() }
+                    onBanUser = { username -> viewModel.adminUserAction(username, "BAN") { m -> viewModel.showToast(m) } },
+                    onBack = { viewModel.navigateBack() },
+                    onUserAction = { u, a, cb -> viewModel.adminUserAction(u, a, cb) },
+                    loadAppeals = { viewModel.loadAppeals() },
+                    loadAudit = { viewModel.loadAudit() },
+                    onResolveAppeal = { ap, ok, cb -> viewModel.resolveAppeal(ap, ok, cb) }
                 )
             }
             is ScreenDestination.Legal -> {

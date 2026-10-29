@@ -31,6 +31,10 @@ fun AdminPanelScreen(
     onRemovePost: (postId: String) -> Unit,
     onBanUser: (username: String) -> Unit,
     onBack: () -> Unit,
+    onUserAction: (String, String, (String) -> Unit) -> Unit = { _, _, _ -> },
+    loadAppeals: suspend () -> List<com.example.model.Appeal> = { emptyList() },
+    loadAudit: suspend () -> List<com.example.model.AuditEntry> = { emptyList() },
+    onResolveAppeal: (com.example.model.Appeal, Boolean, () -> Unit) -> Unit = { _, _, _ -> },
     modifier: Modifier = Modifier
 ) {
     var selectedTab by remember { mutableStateOf(0) } // 0: Reports Queue, 1: Copyright Takedowns, 2: System Health
@@ -87,14 +91,28 @@ fun AdminPanelScreen(
         }
 
         // Tabs
-        TabRow(
+        ScrollableTabRow(
             selectedTabIndex = selectedTab,
             containerColor = Color.Transparent,
-            contentColor = VynoraNeonPink
+            contentColor = VynoraNeonPink,
+            edgePadding = 8.dp
         ) {
             Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }, text = { Text("Reports (${reports.size})", fontSize = 12.sp) })
             Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }, text = { Text("Copyright & IPR", fontSize = 12.sp) })
             Tab(selected = selectedTab == 2, onClick = { selectedTab = 2 }, text = { Text("Compliance (DPDP)", fontSize = 12.sp) })
+            Tab(selected = selectedTab == 3, onClick = { selectedTab = 3 }, text = { Text("Users", fontSize = 12.sp) })
+            Tab(selected = selectedTab == 4, onClick = { selectedTab = 4 }, text = { Text("Appeals", fontSize = 12.sp) })
+            Tab(selected = selectedTab == 5, onClick = { selectedTab = 5 }, text = { Text("Audit log", fontSize = 12.sp) })
+        }
+
+        var userInput by remember { mutableStateOf("") }
+        var userMsg by remember { mutableStateOf("") }
+        var appeals by remember { mutableStateOf<List<com.example.model.Appeal>>(emptyList()) }
+        var audit by remember { mutableStateOf<List<com.example.model.AuditEntry>>(emptyList()) }
+        var reloadKey by remember { mutableStateOf(0) }
+        LaunchedEffect(selectedTab, reloadKey) {
+            if (selectedTab == 4) appeals = loadAppeals()
+            if (selectedTab == 5) audit = loadAudit()
         }
 
         Spacer(modifier = Modifier.height(10.dp))
@@ -221,6 +239,45 @@ fun AdminPanelScreen(
                             }
                         }
                     }
+                }
+            } else if (selectedTab == 3) {
+                item {
+                    Card(shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = cardBg)) {
+                        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Text("Manage a user", fontWeight = FontWeight.Bold, color = if (isDarkMode) Color.White else Color(0xFF0F172A))
+                            OutlinedTextField(value = userInput, onValueChange = { userInput = it }, label = { Text("Username (without @)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Button(onClick = { onUserAction(userInput, "RESTRICT") { userMsg = it } }) { Text("Restrict 7d", fontSize = 12.sp) }
+                                OutlinedButton(onClick = { onUserAction(userInput, "UNRESTRICT") { userMsg = it } }) { Text("Lift", fontSize = 12.sp) }
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Button(onClick = { onUserAction(userInput, "BAN") { userMsg = it } }, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444))) { Text("Ban", fontSize = 12.sp) }
+                                OutlinedButton(onClick = { onUserAction(userInput, "UNBAN") { userMsg = it } }) { Text("Unban", fontSize = 12.sp) }
+                            }
+                            if (userMsg.isNotBlank()) Text(userMsg, fontSize = 12.sp, color = VynoraNeonCyan)
+                            Text("Restricted users can't post or comment. Banned users see an appeal screen. Every action is saved in the Audit log.", fontSize = 11.sp, color = Color(0xFF94A3B8))
+                        }
+                    }
+                }
+            } else if (selectedTab == 4) {
+                if (appeals.isEmpty()) item { Text("No pending appeals.", color = Color(0xFF94A3B8)) }
+                items(appeals, key = { it.id }) { a ->
+                    Card(shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = cardBg)) {
+                        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("@${a.username}", fontWeight = FontWeight.Bold, color = if (isDarkMode) Color.White else Color(0xFF0F172A))
+                            Text(a.message, fontSize = 13.sp, color = if (isDarkMode) Color(0xFFCBD5E1) else Color(0xFF334155))
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Button(onClick = { onResolveAppeal(a, true) { reloadKey++ } }) { Text("Approve (unban)", fontSize = 12.sp) }
+                                OutlinedButton(onClick = { onResolveAppeal(a, false) { reloadKey++ } }) { Text("Reject", fontSize = 12.sp) }
+                            }
+                        }
+                    }
+                }
+            } else if (selectedTab == 5) {
+                if (audit.isEmpty()) item { Text("No admin actions yet.", color = Color(0xFF94A3B8)) }
+                items(audit, key = { it.id }) { e ->
+                    val whenText = java.text.SimpleDateFormat("dd MMM, HH:mm", java.util.Locale.getDefault()).format(java.util.Date(e.createdAt))
+                    Text("$whenText  •  @${e.adminName}  •  ${e.action}  •  ${e.target}", fontSize = 12.sp, color = if (isDarkMode) Color(0xFFCBD5E1) else Color(0xFF334155))
                 }
             } else if (selectedTab == 1) {
                 item {
