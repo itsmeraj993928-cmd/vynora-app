@@ -449,7 +449,7 @@ fun PostCard(
 
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = post.timestamp,
+                text = com.example.util.timeAgo(post.createdAt),
                 fontSize = 10.sp,
                 color = if (isDarkMode) Color(0xFF64748B) else Color(0xFF94A3B8)
             )

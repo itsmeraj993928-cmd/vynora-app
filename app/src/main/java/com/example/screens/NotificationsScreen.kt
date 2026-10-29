@@ -174,7 +174,7 @@ fun NotificationsScreen(
                 contentPadding = PaddingValues(bottom = 24.dp)
             ) {
                 groups.forEach { groupName ->
-                    val itemsInGroup = filtered.filter { it.timeGroup == groupName }
+                    val itemsInGroup = filtered.filter { com.example.util.timeGroupOf(it.createdAt) == groupName }
                     if (itemsInGroup.isNotEmpty()) {
                         item {
                             Text(
@@ -281,7 +281,7 @@ private fun NotificationRow(
             )
             Spacer(modifier = Modifier.height(2.dp))
             Text(
-                text = item.timestamp,
+                text = com.example.util.timeAgo(item.createdAt),
                 fontSize = 11.sp,
                 color = if (isDarkMode) Color(0xFF64748B) else Color(0xFF94A3B8)
             )

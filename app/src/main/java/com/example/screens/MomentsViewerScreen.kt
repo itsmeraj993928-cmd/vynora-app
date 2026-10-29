@@ -314,7 +314,7 @@ fun MomentsViewerScreen(
                         }
 
                         Text(
-                            text = "${currentMoment.timestamp} • Auto-expires in 24h",
+                            text = "${com.example.util.timeAgo(currentMoment.createdAt)} • Auto-expires in 24h",
                             fontSize = 10.sp,
                             color = Color.White.copy(alpha = 0.7f)
                         )

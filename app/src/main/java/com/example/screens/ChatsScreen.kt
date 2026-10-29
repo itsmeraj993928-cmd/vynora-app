@@ -230,7 +230,7 @@ private fun ChatConversationRow(
                     color = if (isDarkMode) Color.White else Color(0xFF0F172A)
                 )
                 Text(
-                    text = conversation.lastMessage.timestamp,
+                    text = com.example.util.timeAgo(conversation.lastMessage.createdAt),
                     fontSize = 11.sp,
                     color = if (isDarkMode) Color(0xFF64748B) else Color(0xFF94A3B8)
                 )
@@ -605,7 +605,7 @@ fun ChatRoomScreen(
                         }
 
                         Text(
-                            text = msg.timestamp + (if (msg.edited) " • edited" else "") +
+                            text = com.example.util.timeAgo(msg.createdAt) + (if (msg.edited) " • edited" else "") +
                                 (if (msg.id == lastOwnId && isMe && conversation.otherSeenAt >= msg.createdAt) " • Seen" else ""),
                             fontSize = 9.sp,
                             color = if (isDarkMode) Color(0xFF64748B) else Color(0xFF94A3B8),

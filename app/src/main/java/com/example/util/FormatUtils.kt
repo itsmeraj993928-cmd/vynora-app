@@ -33,3 +33,28 @@ fun formatCount(count: Long): String {
 }
 
 fun formatCount(count: Int): String = formatCount(count.toLong())
+
+/** "Just now", "5m", "3h", "2d" or "12 Oct" from a millisecond timestamp. */
+fun timeAgo(createdAt: Long, now: Long = System.currentTimeMillis()): String {
+    val diff = (now - createdAt).coerceAtLeast(0L)
+    val min = diff / 60_000L
+    return when {
+        min < 1L -> "Just now"
+        min < 60L -> "${min}m ago"
+        min < 24L * 60L -> "${min / 60L}h ago"
+        min < 7L * 24L * 60L -> "${min / (24L * 60L)}d ago"
+        else -> java.text.SimpleDateFormat("d MMM yyyy", java.util.Locale.getDefault()).format(java.util.Date(createdAt))
+    }
+}
+
+/** "Today", "Yesterday" or "Earlier" (by calendar day). */
+fun timeGroupOf(createdAt: Long, now: Long = System.currentTimeMillis()): String {
+    val a = java.util.Calendar.getInstance().apply { timeInMillis = createdAt }
+    val b = java.util.Calendar.getInstance().apply { timeInMillis = now }
+    val days = ((b.get(java.util.Calendar.YEAR) - a.get(java.util.Calendar.YEAR)) * 366 + (b.get(java.util.Calendar.DAY_OF_YEAR) - a.get(java.util.Calendar.DAY_OF_YEAR)))
+    return when {
+        days <= 0 -> "Today"
+        days == 1 -> "Yesterday"
+        else -> "Earlier"
+    }
+}

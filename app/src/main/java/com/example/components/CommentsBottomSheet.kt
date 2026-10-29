@@ -367,7 +367,7 @@ private fun CommentItemRow(
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Text(
-                        text = comment.timestamp,
+                        text = com.example.util.timeAgo(comment.createdAt),
                         fontSize = 11.sp,
                         color = if (isDarkMode) Color(0xFF64748B) else Color(0xFF94A3B8)
                     )
