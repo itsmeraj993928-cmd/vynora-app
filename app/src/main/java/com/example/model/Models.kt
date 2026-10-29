@@ -177,6 +177,7 @@ data class Clip(
     val likesCount: Int = 0,
     val commentsCount: Int = 0,
     val sharesCount: Int = 0,
+    val viewsCount: Int = 0,
     val isLiked: Boolean = false,
     val isSaved: Boolean = false,
     val isFollowing: Boolean = false,

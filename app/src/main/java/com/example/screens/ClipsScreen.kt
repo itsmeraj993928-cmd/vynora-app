@@ -57,9 +57,13 @@ fun ClipsScreen(
     onBack: (() -> Unit)? = null,
     initialIndex: Int = 0,
     onCreateClick: (() -> Unit)? = null,
-    onReport: (clipId: String, username: String) -> Unit = { _, _ -> }
+    onReport: (clipId: String, username: String) -> Unit = { _, _ -> },
+    onView: (String) -> Unit = {}
 ) {
     val pagerState = rememberPagerState(initialPage = initialIndex.coerceIn(0, maxOf(0, clips.size - 1)), pageCount = { clips.size })
+    LaunchedEffect(pagerState.currentPage, clips.size) {
+        clips.getOrNull(pagerState.currentPage)?.let { onView(it.id) }
+    }
     var isMuted by remember { mutableStateOf(false) }
 
     Box(

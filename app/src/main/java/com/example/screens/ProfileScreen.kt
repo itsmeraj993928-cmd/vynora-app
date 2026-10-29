@@ -744,7 +744,7 @@ fun ProfileScreen(
                                     Box(
                                         modifier = Modifier
                                             .weight(1f)
-                                            .aspectRatio(1f)
+                                            .aspectRatio(if (isClipItem) 0.6f else 1f)
                                             .background(Color(0xFF1E2235))
                                             .clickable {
                                                 if (isClipItem) {
@@ -758,6 +758,17 @@ fun ProfileScreen(
                                             modifier = Modifier.fillMaxSize(),
                                             contentScale = ContentScale.Crop
                                         )
+                                        if (isClipItem) {
+                                            val v = clips.firstOrNull { it.id == itemId }?.viewsCount ?: 0
+                                            Row(
+                                                modifier = Modifier.align(Alignment.BottomStart).padding(8.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Icon(Icons.Filled.Visibility, contentDescription = "Views", tint = Color.White, modifier = Modifier.size(16.dp))
+                                                Spacer(modifier = Modifier.width(4.dp))
+                                                Text(com.example.util.formatCount(v), color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                            }
+                                        }
                                     }
                                 }
                                 // Empty placeholders to balance row
