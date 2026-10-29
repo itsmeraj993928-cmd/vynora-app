@@ -29,7 +29,7 @@ internal data class NotificationDoc(
     val contentPreview: String? = null,
     val timeGroup: String = "Today",
     val timestamp: String = "Just now",
-    val isRead: Boolean = false,
+    @get:com.google.firebase.firestore.PropertyName("isRead") @set:com.google.firebase.firestore.PropertyName("isRead") var isRead: Boolean = false,
     val createdAt: Long = System.currentTimeMillis(),
     val postId: String = ""
 )
