@@ -59,8 +59,22 @@ fun ChatsScreen(
     onOpenConversation: (String) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
-    isRequest: (ChatConversation) -> Boolean = { false }
+    isRequest: (ChatConversation) -> Boolean = { false },
+    loadTargets: suspend () -> List<User> = { emptyList() },
+    onCreateGroup: (String, List<User>) -> Unit = { _, _ -> }
 ) {
+    var showGroupDialog by remember { mutableStateOf(false) }
+    if (showGroupDialog) {
+        UserPickerDialog(
+            title = "New group",
+            askName = true,
+            confirmLabel = "Create",
+            exclude = emptySet(),
+            loadTargets = loadTargets,
+            onConfirm = { name, users -> showGroupDialog = false; onCreateGroup(name, users) },
+            onDismiss = { showGroupDialog = false }
+        )
+    }
     var searchQuery by remember { mutableStateOf("") }
     var selectedTab by remember { mutableStateOf(0) } // 0: Primary, 1: Requests
 
@@ -101,10 +115,10 @@ fun ChatsScreen(
                 )
             }
 
-            IconButton(onClick = {}) {
+            IconButton(onClick = { showGroupDialog = true }) {
                 Icon(
                     imageVector = Icons.Outlined.Edit,
-                    contentDescription = "New Chat",
+                    contentDescription = "New group",
                     tint = VynoraNeonPink
                 )
             }
@@ -244,7 +258,7 @@ private fun ChatConversationRow(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = if (conversation.lastMessage.isAudio) "🎤 Voice note (${conversation.lastMessage.audioDuration ?: "0:34"})" else if (parseSharedReel(conversation.lastMessage.text) != null) "🎬 Reel" else parseCallLog(conversation.lastMessage.text)?.let { if (it.video) "🎥 Video call" else "📞 Voice call" } ?: parseCallInvite(conversation.lastMessage.text)?.let { if (it.first) "🎥 Video call" else "📞 Voice call" } ?: conversation.lastMessage.text,
+                    text = if (conversation.lastMessage.isAudio) "🎤 Voice note (${conversation.lastMessage.audioDuration ?: "0:34"})" else if (conversation.lastMessage.text.startsWith("[img]")) "📷 Photo" else if (conversation.lastMessage.text.startsWith("[doc]")) "📄 Document" else if (parseSharedReel(conversation.lastMessage.text) != null) "🎬 Reel" else parseCallLog(conversation.lastMessage.text)?.let { if (it.video) "🎥 Video call" else "📞 Voice call" } ?: parseCallInvite(conversation.lastMessage.text)?.let { if (it.first) "🎥 Video call" else "📞 Voice call" } ?: conversation.lastMessage.text,
                     fontSize = 13.sp,
                     color = if (conversation.unreadCount > 0) (if (isDarkMode) Color.White else Color.Black) else (if (isDarkMode) Color(0xFF94A3B8) else Color(0xFF64748B)),
                     fontWeight = if (conversation.unreadCount > 0) FontWeight.Bold else FontWeight.Normal,
@@ -287,8 +301,23 @@ fun ChatRoomScreen(
     onDeleteMessage: (String) -> Unit = {},
     onMarkSeen: () -> Unit = {},
     onEditMessage: (String, String) -> Unit = { _, _ -> },
+    onSendAttachment: (Uri) -> Unit = {},
+    onLeaveGroup: () -> Unit = {},
+    onAddMembers: (List<User>) -> Unit = {},
+    loadTargets: suspend () -> List<User> = { emptyList() },
     modifier: Modifier = Modifier
 ) {
+    var groupMenu by remember { mutableStateOf(false) }
+    var showAddMembers by remember { mutableStateOf(false) }
+    val attachLauncher = rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.GetContent()) { u: Uri? -> if (u != null) onSendAttachment(u) }
+    if (showAddMembers) {
+        UserPickerDialog(
+            title = "Add members", askName = false, confirmLabel = "Add",
+            exclude = conversation.memberIds.toSet(), loadTargets = loadTargets,
+            onConfirm = { _, users -> showAddMembers = false; onAddMembers(users) },
+            onDismiss = { showAddMembers = false }
+        )
+    }
     var editingId by remember { mutableStateOf<String?>(null) }
     var searchOpen by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
@@ -458,6 +487,9 @@ fun ChatRoomScreen(
                         fontSize = 14.sp,
                         color = if (isDarkMode) Color.White else Color(0xFF0F172A)
                     )
+                    if (conversation.isGroup) {
+                        Text("${conversation.memberIds.size} members", fontSize = 11.sp, color = Color(0xFF94A3B8))
+                    }
                 }
             }
 
@@ -465,10 +497,22 @@ fun ChatRoomScreen(
                 IconButton(onClick = { searchOpen = !searchOpen; if (!searchOpen) searchQuery = "" }) {
                     Icon(imageVector = Icons.Outlined.Search, contentDescription = "Search", tint = if (isDarkMode) Color.White else Color(0xFF0F172A))
                 }
-                IconButton(onClick = { onStartCall(false) }) {
+                if (conversation.isGroup) {
+                    Box {
+                        IconButton(onClick = { groupMenu = true }) {
+                            Icon(imageVector = Icons.Filled.MoreVert, contentDescription = "Group options", tint = if (isDarkMode) Color.White else Color(0xFF0F172A))
+                        }
+                        DropdownMenu(expanded = groupMenu, onDismissRequest = { groupMenu = false }) {
+                            if (conversation.adminId == currentUser.id) {
+                                DropdownMenuItem(text = { Text("Add members") }, onClick = { groupMenu = false; showAddMembers = true })
+                            }
+                            DropdownMenuItem(text = { Text("Leave group", color = Color(0xFFEF4444)) }, onClick = { groupMenu = false; onLeaveGroup() })
+                        }
+                    }
+                } else IconButton(onClick = { onStartCall(false) }) {
                     Icon(imageVector = Icons.Outlined.Call, contentDescription = "Call", tint = VynoraNeonCyan)
                 }
-                IconButton(onClick = { onStartCall(true) }) {
+                if (!conversation.isGroup) IconButton(onClick = { onStartCall(true) }) {
                     Icon(imageVector = Icons.Outlined.Videocam, contentDescription = "Video", tint = VynoraNeonPink)
                 }
             }
@@ -508,6 +552,9 @@ fun ChatRoomScreen(
                             )
                         }
                     ) {
+                        if (conversation.isGroup && !isMe && msg.senderName.isNotBlank()) {
+                            Text(msg.senderName, fontSize = 10.sp, color = VynoraNeonCyan, modifier = Modifier.padding(start = 6.dp, bottom = 2.dp))
+                        }
                         val sharedReel = parseSharedReel(msg.text)
                         val callInvite = parseCallInvite(msg.text)
                         val callLog = parseCallLog(msg.text)
@@ -528,6 +575,38 @@ fun ChatRoomScreen(
                                     }
                                 }
                             )
+                        } else if (msg.text.startsWith("[img]")) {
+                            val imgUrl = msg.text.removePrefix("[img]")
+                            AsyncImage(
+                                model = imgUrl,
+                                contentDescription = "Photo",
+                                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                                modifier = Modifier
+                                    .width(220.dp).heightIn(min = 120.dp, max = 300.dp)
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .clickable {
+                                        try { callContext.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, Uri.parse(imgUrl))) }
+                                        catch (e: Exception) { onToast("Could not open the photo") }
+                                    }
+                            )
+                        } else if (msg.text.startsWith("[doc]")) {
+                            val parts = msg.text.removePrefix("[doc]").split("|", limit = 2)
+                            val docName = parts.getOrElse(0) { "File" }
+                            val docUrl = parts.getOrElse(1) { "" }
+                            Surface(
+                                shape = RoundedCornerShape(14.dp),
+                                color = if (isMe) VynoraNeonPink else (if (isDarkMode) Color(0xFF1E2235) else Color(0xFFE2E8F0)),
+                                modifier = Modifier.clickable(enabled = docUrl.isNotBlank()) {
+                                    try { callContext.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, Uri.parse(docUrl))) }
+                                    catch (e: Exception) { onToast("Could not open the file") }
+                                }
+                            ) {
+                                Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Text("📄", fontSize = 22.sp)
+                                    Text(docName, fontSize = 13.sp, maxLines = 2, modifier = Modifier.widthIn(max = 180.dp),
+                                        color = if (isMe) Color.White else (if (isDarkMode) Color.White else Color(0xFF0F172A)))
+                                }
+                            }
                         } else if (sharedReel != null) {
                             SharedReelCard(
                                 author = sharedReel.first,
@@ -701,6 +780,9 @@ fun ChatRoomScreen(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            IconButton(onClick = { attachLauncher.launch("*/*") }) {
+                Icon(imageVector = Icons.Outlined.AttachFile, contentDescription = "Attach", tint = if (isDarkMode) Color(0xFF94A3B8) else Color(0xFF64748B))
+            }
             // Simulated voice note record button
             IconButton(
                 onClick = {
@@ -1016,4 +1098,57 @@ private fun CallInviteCard(isVideo: Boolean, isMe: Boolean, isDarkMode: Boolean,
             }
         }
     }
+}
+
+
+/** Pick people (and optionally a name) - used for creating a group and for adding members. */
+@Composable
+private fun UserPickerDialog(
+    title: String,
+    askName: Boolean,
+    confirmLabel: String,
+    exclude: Set<String>,
+    loadTargets: suspend () -> List<User>,
+    onConfirm: (String, List<User>) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var name by remember { mutableStateOf("") }
+    var people by remember { mutableStateOf<List<User>?>(null) }
+    var picked by remember { mutableStateOf<Set<String>>(emptySet()) }
+    LaunchedEffect(Unit) { people = loadTargets().filter { it.id !in exclude } }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            Column {
+                if (askName) {
+                    OutlinedTextField(value = name, onValueChange = { name = it.take(40) }, label = { Text("Group name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+                val list = people
+                when {
+                    list == null -> Text("Loading…")
+                    list.isEmpty() -> Text("Follow some people first, then you can add them here.")
+                    else -> LazyColumn(modifier = Modifier.heightIn(max = 300.dp)) {
+                        items(list, key = { it.id }) { u ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth().clickable { picked = if (u.id in picked) picked - u.id else picked + u.id }.padding(vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Checkbox(checked = u.id in picked, onCheckedChange = { picked = if (it) picked + u.id else picked - u.id })
+                                Text(u.username, fontSize = 14.sp)
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = picked.isNotEmpty() && (!askName || name.isNotBlank()),
+                onClick = { onConfirm(name, (people ?: emptyList()).filter { it.id in picked }) }
+            ) { Text(confirmLabel) }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
 }

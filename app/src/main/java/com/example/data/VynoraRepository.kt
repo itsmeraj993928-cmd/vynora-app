@@ -568,6 +568,7 @@ class VynoraRepository(
                         try {
                             val id = doc.getString("id") ?: doc.id
                             val participantIds = (doc.get("participantIds") as? List<*>)?.filterIsInstance<String>() ?: listOf()
+                            val isGroupChat = doc.getBoolean("isGroup") == true
                             val otherUserId = participantIds.firstOrNull { it != userId } ?: VynoraOfficial.OFFICIAL_USER_ID
                             val lastMessageText = doc.getString("lastMessage") ?: ""
                             val msgs = try {
@@ -582,11 +583,15 @@ class VynoraRepository(
                             } ?: System.currentTimeMillis()
                             ChatConversation(
                                 id = id,
-                                participant = loadUserCached(otherUserId),
+                                isGroup = isGroupChat,
+                                groupName = doc.getString("groupName"),
+                                adminId = doc.getString("adminId") ?: "",
+                                memberIds = participantIds,
+                                participant = if (isGroupChat) User(id = id, username = doc.getString("groupName") ?: "Group", fullName = "${participantIds.size} members") else loadUserCached(otherUserId),
                                 messages = msgs,
                                 lastMessage = msgs.lastOrNull() ?: ChatMessage(text = lastMessageText, timestamp = "Recent"),
                                 updatedAt = updatedAt,
-                                otherSeenAt = (doc.get("seen_$otherUserId") as? Number)?.toLong() ?: 0L
+                                otherSeenAt = if (isGroupChat) 0L else (doc.get("seen_$otherUserId") as? Number)?.toLong() ?: 0L
                             )
                         } catch (e: Exception) { null }
                     }
@@ -918,6 +923,12 @@ class VynoraRepository(
     } catch (e: Exception) { emptyList() }
 
     /** +1 view on a reel (one per person per app session is enforced in the ViewModel). */
+    suspend fun bumpPostViews(postId: String) {
+        try {
+            db.collection("posts").document(postId).update("viewsCount", com.google.firebase.firestore.FieldValue.increment(1)).await()
+        } catch (e: Exception) { Log.w("VynoraRepo", "bumpPostViews failed", e) }
+    }
+
     suspend fun bumpClipViews(clipId: String) {
         try {
             db.collection("clips").document(clipId).update("viewsCount", com.google.firebase.firestore.FieldValue.increment(1)).await()
@@ -1354,16 +1365,47 @@ class VynoraRepository(
         awaitClose { listener.remove() }
     }
 
-    suspend fun sendChatMessage(conversationId: String, me: User, otherId: String, msg: ChatMessage) {
+    private fun chatLabel(msg: ChatMessage): String = when {
+        msg.isAudio -> "Voice note"
+        msg.text.startsWith("[img]") -> "Photo"
+        msg.text.startsWith("[doc]") -> "Document"
+        else -> msg.text.take(60)
+    }
+
+    suspend fun createGroup(me: User, name: String, memberIds: List<String>): String? = try {
+        val id = "grp_${System.currentTimeMillis()}"
+        val all = (listOf(me.id) + memberIds).distinct()
+        db.collection("chats").document(id).set(
+            mapOf(
+                "id" to id, "isGroup" to true, "groupName" to name.trim().take(40),
+                "adminId" to me.id, "participantIds" to all,
+                "lastMessage" to "Group created", "updatedAt" to System.currentTimeMillis()
+            )
+        ).await()
+        id
+    } catch (e: Exception) { Log.w("VynoraRepo", "createGroup failed", e); null }
+
+    suspend fun leaveGroup(conversationId: String, userId: String) {
+        try { db.collection("chats").document(conversationId).update("participantIds", FieldValue.arrayRemove(userId)).await() }
+        catch (e: Exception) { Log.w("VynoraRepo", "leaveGroup failed", e) }
+    }
+
+    suspend fun addGroupMembers(conversationId: String, ids: List<String>) {
+        try { db.collection("chats").document(conversationId).update("participantIds", FieldValue.arrayUnion(*ids.toTypedArray())).await() }
+        catch (e: Exception) { Log.w("VynoraRepo", "addGroupMembers failed", e) }
+    }
+
+    suspend fun sendChatMessage(conversationId: String, me: User, otherId: String?, msg: ChatMessage) {
         try {
             val chatRef = db.collection("chats").document(conversationId)
+            val base = mutableMapOf<String, Any>(
+                "id" to conversationId,
+                "lastMessage" to chatLabel(msg),
+                "updatedAt" to System.currentTimeMillis()
+            )
+            if (otherId != null) base["participantIds"] = listOf(me.id, otherId)
             chatRef.set(
-                mapOf(
-                    "id" to conversationId,
-                    "participantIds" to listOf(me.id, otherId),
-                    "lastMessage" to msg.text.take(60),
-                    "updatedAt" to System.currentTimeMillis()
-                ),
+                base,
                 com.google.firebase.firestore.SetOptions.merge()
             ).await()
             chatRef.collection("messages").document(msg.id).set(msg).await()

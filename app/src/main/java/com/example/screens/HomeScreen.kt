@@ -79,7 +79,9 @@ fun HomeScreen(
     onRepost: (Post) -> Unit = {},
     onHashtagClick: (String) -> Unit = {},
     savedFolders: Map<String, String> = emptyMap(),
-    onSaveToFolder: (String, String) -> Unit = { _, _ -> }
+    onSaveToFolder: (String, String) -> Unit = { _, _ -> },
+    onMute: (String) -> Unit = {},
+    onPostView: (String) -> Unit = {}
 ) {
     var folderForPost by remember { mutableStateOf<String?>(null) }
     var newFolder by remember { mutableStateOf("") }
@@ -314,6 +316,7 @@ fun HomeScreen(
                         return@items
                     }
                     val post = (item as FeedItem.P).post
+                    LaunchedEffect(post.id) { onPostView(post.id) }
                     Column {
                         Box {
                         PostCard(
@@ -332,6 +335,7 @@ fun HomeScreen(
                             onRepost = { onRepost(post) },
                             onHashtagClick = onHashtagClick,
                             onSaveToFolder = { folderForPost = post.id },
+                            onMute = { onMute(post.author.username) },
                             modifier = Modifier.padding(horizontal = 14.dp)
                         )
                         if (post.author.id.isNotBlank() && post.author.id != currentUser.id && !post.author.isOfficial && !post.author.isFollowing) {
