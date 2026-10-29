@@ -968,6 +968,7 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
 
     fun addComment(postId: String, text: String, replyToId: String? = null) {
         if (text.isBlank()) return
+        if (restrictedNow()) return
         val user = _uiState.value.currentUser ?: return
 
         if (com.example.util.ContentFilter.isBlocked(text)) {
@@ -1588,6 +1589,7 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
             showToast("Your caption has words that aren't allowed on VYNORA (adult or abusive). Please change it.")
             return
         }
+        if (restrictedNow()) return
         if (!com.example.util.NetworkMonitor.online) {
             showToast("No internet. Connect to Wi-Fi or mobile data and try again.")
             return
@@ -1967,6 +1969,24 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch { repository.deleteChatMessage(conversationId, messageId, newLast) }
     }
 
+    fun markChatSeen(conversationId: String) {
+        val me = _uiState.value.currentUser?.id ?: return
+        viewModelScope.launch { repository.markChatSeen(conversationId, me) }
+    }
+
+    fun editChatMessage(conversationId: String, messageId: String, text: String) {
+        val t = text.trim()
+        if (t.isBlank()) return
+        if (com.example.util.ContentFilter.isBlocked(t)) { showToast("This message contains words that are not allowed"); return }
+        _uiState.update { state ->
+            state.copy(chats = state.chats.map { conv ->
+                if (conv.id == conversationId) conv.copy(messages = conv.messages.map { if (it.id == messageId) it.copy(text = t, edited = true) else it })
+                else conv
+            })
+        }
+        viewModelScope.launch { repository.editChatMessage(conversationId, messageId, t) }
+    }
+
     fun sendMessage(conversationId: String, text: String, isAudio: Boolean = false, audioDuration: String? = null) {
         if (text.isBlank() && !isAudio) return
         val user = _uiState.value.currentUser ?: return
@@ -2132,6 +2152,56 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
             state.copy(currentUser = updatedUser)
         }
         showToast("Profile updated successfully ✨")
+    }
+
+    private fun isAdminUser(): Boolean = _uiState.value.currentUser?.let { it.role == "ADMIN" || it.email.equals("itsmeraj993928@gmail.com", ignoreCase = true) } == true
+
+    /** Admin: BAN, UNBAN, RESTRICT (7 days) or UNRESTRICT a user. Every action is written to the audit log. */
+    fun adminUserAction(username: String, action: String, onDone: (String) -> Unit = {}) {
+        val admin = _uiState.value.currentUser ?: return
+        if (!isAdminUser()) { onDone("Admins only"); return }
+        viewModelScope.launch {
+            val target = repository.findUserByUsername(username)
+            if (target == null) { onDone("User not found"); return@launch }
+            if (target.id == admin.id) { onDone("You can't do this to your own account"); return@launch }
+            val ok = when (action) {
+                "BAN" -> repository.setUserField(target.id, "isBanned", true)
+                "UNBAN" -> repository.setUserField(target.id, "isBanned", false)
+                "RESTRICT" -> repository.setUserField(target.id, "restrictedUntil", System.currentTimeMillis() + 7L * 24 * 3600 * 1000)
+                else -> repository.setUserField(target.id, "restrictedUntil", 0L)
+            }
+            if (ok) repository.addAudit(admin, action, "@${target.username}")
+            onDone(if (ok) "Done: $action @${target.username}" else "Failed. Publish the latest Firestore rules and try again.")
+        }
+    }
+
+    suspend fun loadAppeals() = repository.loadAppeals()
+    suspend fun loadAudit() = repository.loadAudit()
+
+    fun resolveAppeal(a: com.example.model.Appeal, approve: Boolean, onDone: () -> Unit = {}) {
+        val admin = _uiState.value.currentUser ?: return
+        if (!isAdminUser()) return
+        viewModelScope.launch {
+            if (approve) repository.setUserField(a.userId, "isBanned", false)
+            repository.resolveAppeal(a.id, if (approve) "APPROVED" else "REJECTED")
+            repository.addAudit(admin, if (approve) "APPEAL_APPROVED" else "APPEAL_REJECTED", "@${a.username}")
+            onDone()
+        }
+    }
+
+    fun submitAppeal(message: String, onDone: (Boolean) -> Unit) {
+        val user = _uiState.value.currentUser ?: return
+        if (message.isBlank()) { onDone(false); return }
+        viewModelScope.launch { onDone(repository.submitAppeal(user, message.trim())) }
+    }
+
+    private fun restrictedNow(): Boolean {
+        val u = _uiState.value.currentUser ?: return false
+        if (u.restrictedUntil > System.currentTimeMillis()) {
+            showToast("Your account is restricted for a few days. You can't post or comment right now.")
+            return true
+        }
+        return false
     }
 
     fun resolveReport(id: String, action: String) {
