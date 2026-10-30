@@ -541,6 +541,25 @@ class VynoraRepository(
 
     private val userCache = mutableMapOf<String, User>()
 
+    /** Tell others I am online right now. */
+    suspend fun touchActive(uid: String) {
+        try { db.collection("users").document(uid).update("lastActiveAt", System.currentTimeMillis()).await() }
+        catch (e: Exception) { Log.w("VynoraRepo", "touchActive failed", e) }
+    }
+
+    /** Fresh (not cached) profiles, used for online status and notes in the chat list. */
+    suspend fun loadUsersFresh(ids: List<String>): Map<String, User> {
+        val out = mutableMapOf<String, User>()
+        for (id in ids) {
+            if (id == VynoraOfficial.OFFICIAL_USER_ID) continue
+            try {
+                val u = db.collection("users").document(id).get().await().toObject(User::class.java)
+                if (u != null) { val f = u.copy(id = id); userCache[id] = f; out[id] = f }
+            } catch (e: Exception) { /* skip */ }
+        }
+        return out
+    }
+
     private suspend fun loadUserCached(uid: String): User {
         if (uid == VynoraOfficial.OFFICIAL_USER_ID) return VynoraOfficial.createOfficialUser()
         userCache[uid]?.let { return it }

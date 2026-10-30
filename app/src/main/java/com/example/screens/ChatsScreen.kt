@@ -21,6 +21,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
@@ -48,6 +50,8 @@ import com.example.components.StoryRingAvatar
 import com.example.model.ChatConversation
 import com.example.model.ChatMessage
 import com.example.model.User
+import com.example.model.Moment
+import com.example.model.hasActiveNote
 import com.example.ui.theme.VynoraNeonCyan
 import com.example.ui.theme.VynoraNeonPink
 import kotlinx.coroutines.launch
@@ -61,8 +65,33 @@ fun ChatsScreen(
     modifier: Modifier = Modifier,
     isRequest: (ChatConversation) -> Boolean = { false },
     loadTargets: suspend () -> List<User> = { emptyList() },
-    onCreateGroup: (String, List<User>) -> Unit = { _, _ -> }
+    onCreateGroup: (String, List<User>) -> Unit = { _, _ -> },
+    presence: Map<String, User> = emptyMap(),
+    moments: List<Moment> = emptyList(),
+    me: User? = null,
+    isRefreshing: Boolean = false,
+    onRefresh: () -> Unit = {},
+    onRefreshPresence: () -> Unit = {},
+    onOpenMoment: (Int) -> Unit = {},
+    onSaveNote: (String, com.example.util.MusicTrack?) -> Unit = { _, _ -> }
 ) {
+    var showNoteDialog by remember { mutableStateOf(false) }
+    if (showNoteDialog && me != null) {
+        NoteEditDialog(
+            initialText = if (me.hasActiveNote()) me.note else "",
+            initialSong = if (me.hasActiveNote()) me.noteSong else "",
+            initialSongUrl = me.noteSongUrl,
+            isDarkMode = isDarkMode,
+            onSave = { t, sg -> onSaveNote(t, sg); showNoteDialog = false },
+            onDismiss = { showNoteDialog = false }
+        )
+    }
+    // keep online dots fresh while this screen is open
+    LaunchedEffect(chats.size) {
+        while (true) { onRefreshPresence(); delay(30_000) }
+    }
+    val nowMs = System.currentTimeMillis()
+    fun isOnline(u: User?): Boolean = u != null && u.lastActiveAt > 0L && nowMs - u.lastActiveAt < 150_000L
     var showGroupDialog by remember { mutableStateOf(false) }
     if (showGroupDialog) {
         UserPickerDialog(
@@ -188,47 +217,114 @@ fun ChatsScreen(
             }
         }
 
-        if (filteredChats.isEmpty()) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(32.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(
-                        imageVector = Icons.Outlined.ChatBubbleOutline,
-                        contentDescription = null,
-                        tint = VynoraNeonCyan,
-                        modifier = Modifier.size(52.dp)
-                    )
-                    Spacer(modifier = Modifier.height(14.dp))
-                    Text(
-                        text = "No chats yet",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 18.sp,
-                        color = if (isDarkMode) Color.White else Color(0xFF0F172A)
-                    )
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(
-                        text = "Start a direct conversation with creators or friends on VYNORA.",
-                        fontSize = 13.sp,
-                        color = Color.Gray,
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                    )
-                }
-            }
-        } else {
+        val screenText = if (isDarkMode) Color.White else Color(0xFF0F172A)
+        // people with a note: me first, then chat partners and story authors who wrote a note
+        val noteUsers = remember(chats, presence, moments) {
+            val fromChats = chats.filter { !it.isGroup }.map { presence[it.participant.id] ?: it.participant }
+            val fromStories = moments.map { it.author }
+            (fromChats + fromStories)
+                .filter { it.id.isNotBlank() && it.id != me?.id && it.hasActiveNote() }
+                .distinctBy { it.id }
+        }
+        PullToRefreshBox(
+            isRefreshing = isRefreshing,
+            onRefresh = onRefresh,
+            modifier = Modifier.fillMaxSize()
+        ) {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(vertical = 10.dp)
+                contentPadding = PaddingValues(bottom = 10.dp)
             ) {
-                items(filteredChats, key = { it.id }) { conv ->
-                    ChatConversationRow(
-                        conversation = conv,
-                        isDarkMode = isDarkMode,
-                        onClick = { onOpenConversation(conv.id) }
-                    )
+                // --- Notes + stories strip ---
+                item {
+                    LazyRow(
+                        modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
+                        contentPadding = PaddingValues(horizontal = 14.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        if (me != null) item {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(72.dp)) {
+                                Box(modifier = Modifier.height(32.dp), contentAlignment = Alignment.BottomCenter) {
+                                    if (me.hasActiveNote()) NoteBubble(me.note, me.noteSong, isDarkMode, onClick = { showNoteDialog = true })
+                                    else Text(
+                                        "+ Note", fontSize = 11.sp, color = VynoraNeonCyan, fontWeight = FontWeight.SemiBold,
+                                        modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable { showNoteDialog = true }.padding(horizontal = 8.dp, vertical = 4.dp)
+                                    )
+                                }
+                                val myIdx = moments.indexOfFirst { it.author.id == me.id }
+                                StoryRingAvatar(
+                                    avatarUrl = me.avatarUrl,
+                                    hasStory = myIdx >= 0,
+                                    isViewed = myIdx >= 0 && moments[myIdx].isViewed,
+                                    size = 62.dp,
+                                    onClick = { if (myIdx >= 0) onOpenMoment(myIdx) else showNoteDialog = true }
+                                )
+                                Text("Your note", fontSize = 11.sp, color = Color.Gray, maxLines = 1)
+                            }
+                        }
+                        items(noteUsers.size) { k ->
+                            val u = noteUsers[k]
+                            val idx = moments.indexOfFirst { it.author.id == u.id }
+                            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(72.dp)) {
+                                Box(modifier = Modifier.height(32.dp), contentAlignment = Alignment.BottomCenter) {
+                                    NoteBubble(u.note, u.noteSong, isDarkMode)
+                                }
+                                Box {
+                                    StoryRingAvatar(
+                                        avatarUrl = u.avatarUrl,
+                                        hasStory = idx >= 0,
+                                        isViewed = idx >= 0 && moments[idx].isViewed,
+                                        size = 62.dp,
+                                        onClick = { if (idx >= 0) onOpenMoment(idx) else chats.firstOrNull { it.participant.id == u.id }?.let { onOpenConversation(it.id) } }
+                                    )
+                                    if (isOnline(presence[u.id] ?: u)) OnlineDot(screenBg, Modifier.align(Alignment.BottomEnd))
+                                }
+                                Text(u.username.take(10), fontSize = 11.sp, color = Color.Gray, maxLines = 1)
+                            }
+                        }
+                    }
+                }
+
+                if (filteredChats.isEmpty()) {
+                    item {
+                        Column(
+                            modifier = Modifier.fillMaxWidth().padding(32.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Spacer(modifier = Modifier.height(40.dp))
+                            Icon(
+                                imageVector = Icons.Outlined.ChatBubbleOutline,
+                                contentDescription = null,
+                                tint = VynoraNeonCyan,
+                                modifier = Modifier.size(52.dp)
+                            )
+                            Spacer(modifier = Modifier.height(14.dp))
+                            Text("No chats yet", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = screenText)
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = "Start a direct conversation with creators or friends on VYNORA. Pull down to refresh.",
+                                fontSize = 13.sp,
+                                color = Color.Gray,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                            )
+                        }
+                    }
+                } else {
+                    items(filteredChats, key = { it.id }) { conv ->
+                        val fresh = presence[conv.participant.id]
+                        val sIdx = if (conv.isGroup) -1 else moments.indexOfFirst { it.author.id == conv.participant.id }
+                        ChatConversationRow(
+                            conversation = conv,
+                            isDarkMode = isDarkMode,
+                            online = !conv.isGroup && isOnline(fresh),
+                            lastActiveAt = fresh?.lastActiveAt ?: 0L,
+                            hasStory = sIdx >= 0,
+                            storyViewed = sIdx >= 0 && moments[sIdx].isViewed,
+                            bgColor = screenBg,
+                            onOpenStory = { onOpenMoment(sIdx) },
+                            onClick = { onOpenConversation(conv.id) }
+                        )
+                    }
                 }
             }
         }
@@ -236,9 +332,39 @@ fun ChatsScreen(
 }
 
 @Composable
+private fun OnlineDot(ring: Color, modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .size(16.dp)
+            .clip(CircleShape)
+            .background(ring)
+            .padding(2.5.dp)
+            .clip(CircleShape)
+            .background(Color(0xFF22C55E))
+    )
+}
+
+private fun activeText(lastActiveAt: Long): String {
+    if (lastActiveAt <= 0L) return ""
+    val d = System.currentTimeMillis() - lastActiveAt
+    return when {
+        d < 150_000L -> "Active now"
+        d < 3_600_000L -> "Active ${d / 60_000L}m ago"
+        d < 86_400_000L -> "Active ${d / 3_600_000L}h ago"
+        else -> ""
+    }
+}
+
+@Composable
 private fun ChatConversationRow(
     conversation: ChatConversation,
     isDarkMode: Boolean,
+    online: Boolean,
+    lastActiveAt: Long,
+    hasStory: Boolean,
+    storyViewed: Boolean,
+    bgColor: Color,
+    onOpenStory: () -> Unit,
     onClick: () -> Unit
 ) {
     Row(
@@ -249,14 +375,22 @@ private fun ChatConversationRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        StoryRingAvatar(
-            avatarUrl = conversation.participant.avatarUrl,
-            size = 56.dp
-        )
+        Box {
+            StoryRingAvatar(
+                avatarUrl = conversation.participant.avatarUrl,
+                hasStory = hasStory,
+                isViewed = storyViewed,
+                size = 56.dp,
+                onClick = { if (hasStory) onOpenStory() else onClick() }
+            )
+            if (online) OnlineDot(bgColor, Modifier.align(Alignment.BottomEnd))
+        }
 
         val unread = conversation.unreadCount > 0
         val last = conversation.lastMessage
-        val preview = if (last.isAudio) "Sent a voice message"
+        val noMsg = last.text.isBlank() && !last.isAudio
+        val preview = if (noMsg) activeText(lastActiveAt).ifBlank { "Say hi 👋" }
+            else if (last.isAudio) "Sent a voice message"
             else if (last.text.startsWith("[img]")) "Sent a photo"
             else if (last.text.startsWith("[doc]")) "Sent a document"
             else if (parseSharedReel(last.text) != null) "Sent a reel"
@@ -286,7 +420,7 @@ private fun ChatConversationRow(
                     overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f, fill = false)
                 )
-                Text(
+                if (!noMsg) Text(
                     text = " · " + com.example.util.timeAgo(last.createdAt),
                     fontSize = 13.sp,
                     color = soft,
