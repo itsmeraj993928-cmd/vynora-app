@@ -36,20 +36,23 @@ fun LegalScreen(
 Welcome to VYNORA. We respect your privacy and are committed to protecting personal data in strict compliance with applicable data protection laws, specifically the Digital Personal Data Protection Act, 2023 (DPDP Act) of India and international standards.
 
 2. GROUNDS OF PROCESSING & CONSENT
-We process your personal data (name, email, profile photos, clips, chats, and device identifiers) only with your free, specific, informed, and unconditional consent. You have the right to withdraw consent at any time via Settings -> Account.
+We process your personal data (name, email, profile photos, clips, chats, and device identifiers) only with your free, specific, informed, and unconditional consent. You can withdraw consent at any time by deleting your account from Settings.
 
 3. RIGHTS OF THE DATA PRINCIPAL
 Under the DPDP Act, you are entitled to:
 - Right to Access Information: Request a summary of personal data processed.
 - Right to Correction & Erasure: Request rectification of inaccurate data or complete deletion.
-- Right of Grievance Redressal: Contact our designated Data Protection Officer (DPO) at dpo@vynora.io.
+- Right of Grievance Redressal: Send your complaint from inside the app (Report option on any post, or Appeal on the account screen). The VYNORA team will review it.
 - Right to Nominate: Designate an individual to exercise data rights in the event of incapacity.
 
 4. CHILDREN'S DATA & AGE GATE
 Users must be at least 13 years of age. VYNORA does not engage in targeted behavioral advertising to minors or tracking of children's personal data.
 
-5. SECURITY & DATA LOCALIZATION
-All telemetry and user creations are encrypted with TLS 1.3 in transit and AES-256 at rest.
+5. SECURITY & STORAGE
+Your data is stored with Google Firebase and media with Cloudinary. Data is encrypted in transit (HTTPS) and at rest by these providers. Chats are protected by access rules so only the people in a chat can read it. No system is 100% secure.
+
+6. CHANGES
+This policy may be updated as the app grows. Continued use means you accept the updated policy.
         """.trimIndent()
 
         "terms" -> "Terms of Service" to """
@@ -82,7 +85,7 @@ Your notice must include:
 - A physical or electronic signature of the copyright owner or authorized representative.
 
 3. COUNTER-NOTICE & APPEAL PROCEDURE
-Users whose content has been removed may submit an appeal within 14 days demonstrating fair use, licensing, or mistaken identification. Send inquiries to legal@vynora.io.
+Users whose content has been removed may submit an appeal within 14 days demonstrating fair use, licensing, or mistaken identification. Use the Report option inside the app, or the Appeal form on the account screen.
         """.trimIndent()
 
         else -> "Community Guidelines" to """
@@ -151,12 +154,12 @@ Share your own creations or respect the creators behind the sounds and visuals y
 
                     if (docType == "copyright") {
                         Button(
-                            onClick = { onToast("Copyright takedown form submitted to legal review team") },
+                            onClick = { onToast("Please use the Report option on the post to flag copyright content") },
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(12.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = VynoraNeonPink)
                         ) {
-                            Text("Submit Formal Notice to DPO", fontWeight = FontWeight.Bold)
+                            Text("How to report content", fontWeight = FontWeight.Bold)
                         }
                     }
                 }
