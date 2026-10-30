@@ -56,6 +56,7 @@ import com.example.ui.theme.VynoraNeonCyan
 import com.example.ui.theme.VynoraNeonPink
 import kotlinx.coroutines.launch
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatsScreen(
     chats: List<ChatConversation>,
