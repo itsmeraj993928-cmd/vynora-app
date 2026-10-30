@@ -83,19 +83,32 @@ fun ClipShareSheet(
                 .fillMaxHeight(0.85f)
                 .padding(horizontal = 16.dp)
         ) {
-            OutlinedTextField(
-                value = query,
-                onValueChange = { query = it },
-                placeholder = { Text("Search", fontSize = 14.sp) },
-                leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null) },
-                singleLine = true,
-                shape = RoundedCornerShape(14.dp),
-                modifier = Modifier.fillMaxWidth(),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = VynoraNeonCyan,
-                    unfocusedBorderColor = if (isDarkMode) Color(0x33FFFFFF) else Color(0x33000000)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(46.dp)
+                    .clip(RoundedCornerShape(23.dp))
+                    .background(if (isDarkMode) Color(0xFF1C1F2B) else Color(0xFFEFF1F5))
+                    .padding(horizontal = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Icon(Icons.Outlined.Search, contentDescription = null, tint = subColor, modifier = Modifier.size(20.dp))
+                androidx.compose.foundation.text.BasicTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    singleLine = true,
+                    textStyle = androidx.compose.ui.text.TextStyle(fontSize = 15.sp, color = textColor),
+                    cursorBrush = androidx.compose.ui.graphics.SolidColor(VynoraNeonCyan),
+                    modifier = Modifier.weight(1f),
+                    decorationBox = { inner ->
+                        Box(contentAlignment = Alignment.CenterStart) {
+                            if (query.isEmpty()) Text("Search", fontSize = 15.sp, color = subColor)
+                            inner()
+                        }
+                    }
                 )
-            )
+            }
             Spacer(modifier = Modifier.height(12.dp))
 
             val list = targets
@@ -139,7 +152,7 @@ fun ClipShareSheet(
                                 Box(contentAlignment = Alignment.BottomEnd) {
                                     Box(
                                         modifier = Modifier
-                                            .size(72.dp)
+                                            .size(84.dp)
                                             .clip(CircleShape)
                                             .then(
                                                 if (selected) Modifier.border(BorderStroke(3.dp, VynoraNeonCyan), CircleShape)
@@ -149,9 +162,35 @@ fun ClipShareSheet(
                                     ) {
                                         StoryRingAvatar(
                                             avatarUrl = u.avatarUrl,
-                                            size = 66.dp,
+                                            size = 78.dp,
                                             onClick = { toggle(u) }
                                         )
+                                    }
+                                    val ago = System.currentTimeMillis() - u.lastActiveAt
+                                    if (!selected && u.lastActiveAt > 0L) {
+                                        if (ago < 150_000L) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .padding(4.dp)
+                                                    .size(20.dp)
+                                                    .clip(CircleShape)
+                                                    .background(bg)
+                                                    .padding(3.dp)
+                                                    .clip(CircleShape)
+                                                    .background(Color(0xFF22C55E))
+                                            )
+                                        } else if (ago < 86_400_000L) {
+                                            Text(
+                                                text = if (ago < 3_600_000L) "${ago / 60_000L}m" else "${ago / 3_600_000L}h",
+                                                color = Color(0xFF16A34A),
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                modifier = Modifier
+                                                    .clip(RoundedCornerShape(10.dp))
+                                                    .background(if (isDarkMode) Color(0xFF14301F) else Color(0xFFE7F8EC))
+                                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                                            )
+                                        }
                                     }
                                     if (selected) {
                                         Box(
@@ -215,7 +254,7 @@ fun ClipShareSheet(
                 ) {
                     if (onAddToStory != null) ShareAction(Icons.Outlined.AddCircleOutline, "Add to story", isDarkMode, onAddToStory)
                     ShareAction(Icons.Outlined.Link, "Copy link", isDarkMode, onCopyLink)
-                    ShareAction(Icons.Outlined.Chat, "WhatsApp", isDarkMode, onWhatsApp)
+                    ShareAction(Icons.Outlined.Chat, "WhatsApp", isDarkMode, onWhatsApp, circleColor = Color(0xFF25D366), iconTint = Color.White)
                     ShareAction(Icons.Outlined.Share, "Share", isDarkMode, onMore)
                 }
             }
@@ -229,7 +268,9 @@ private fun ShareAction(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     label: String,
     isDarkMode: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    circleColor: Color? = null,
+    iconTint: Color? = null
 ) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -242,13 +283,13 @@ private fun ShareAction(
             modifier = Modifier
                 .size(52.dp)
                 .clip(CircleShape)
-                .background(if (isDarkMode) Color(0xFF1E2235) else Color(0xFFE2E8F0)),
+                .background(circleColor ?: if (isDarkMode) Color(0xFF1E2235) else Color(0xFFE2E8F0)),
             contentAlignment = Alignment.Center
         ) {
             Icon(
                 imageVector = icon,
                 contentDescription = label,
-                tint = if (isDarkMode) Color.White else Color(0xFF0F172A)
+                tint = iconTint ?: if (isDarkMode) Color.White else Color(0xFF0F172A)
             )
         }
         Spacer(modifier = Modifier.height(4.dp))

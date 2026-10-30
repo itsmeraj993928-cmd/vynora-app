@@ -837,6 +837,10 @@ fun VynoraApp(viewModel: VynoraViewModel) {
                     viewModel.shareClipToUsers(clipToShare, users)
                     shareClip = null
                 },
+                onAddToStory = {
+                    viewModel.addClipToStory(clipToShare)
+                    shareClip = null
+                },
                 onCopyLink = {
                     try {
                         val cm = hostContext.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager

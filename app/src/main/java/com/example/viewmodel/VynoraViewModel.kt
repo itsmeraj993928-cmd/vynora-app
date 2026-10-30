@@ -1225,7 +1225,11 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
         val mutuals = followers.filter { it in following }
         val ids = (chatIds + mutuals + following.toList() + followers)
             .filter { it.isNotBlank() && it != me.id }.distinct().take(100)
-        return try { repository.getUsersByIds(ids).filter { it.username.isNotBlank() } } catch (e: Exception) { emptyList() }
+        return try {
+            // fresh profiles so the green "online" dot is correct
+            val fresh = repository.loadUsersFresh(ids)
+            ids.map { fresh[it] ?: repository.getUsersByIds(listOf(it)).first() }.filter { it.username.isNotBlank() }
+        } catch (e: Exception) { emptyList() }
     }
 
     /** Search any account by username (for the share sheet search box). */
@@ -1260,6 +1264,17 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
             return
         }
         publishMoment("", url, null, false)
+    }
+
+    /** Put a reel on my story using its cover picture (stories show photos only). */
+    fun addClipToStory(clip: Clip) {
+        val url = clip.mediaUrl
+        if (url.isBlank()) { showToast("Could not add this reel to your story"); return }
+        val withoutExt = url.substringBeforeLast('.', url)
+        val cover = if (url.contains("/video/upload/"))
+            withoutExt.replace("/video/upload/", "/video/upload/so_0,w_720,h_1280,c_fill/") + ".jpg"
+        else withoutExt + ".jpg"
+        publishMoment("Reel by @${clip.author.username}", cover, null, false)
     }
 
     fun shareClipToUsers(clip: Clip, targets: List<User>) {
