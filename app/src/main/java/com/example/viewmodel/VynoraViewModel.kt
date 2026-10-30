@@ -1266,15 +1266,11 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
         publishMoment("", url, null, false)
     }
 
-    /** Put a reel on my story using its cover picture (stories show photos only). */
-    fun addClipToStory(clip: Clip) {
-        val url = clip.mediaUrl
-        if (url.isBlank()) { showToast("Could not add this reel to your story"); return }
-        val withoutExt = url.substringBeforeLast('.', url)
-        val cover = if (url.contains("/video/upload/"))
-            withoutExt.replace("/video/upload/", "/video/upload/so_0,w_720,h_1280,c_fill/") + ".jpg"
-        else withoutExt + ".jpg"
-        publishMoment("Reel by @${clip.author.username}", cover, null, false)
+    /** Put a reel on my story (the reel plays as the story video). */
+    fun addClipToStory(clip: Clip, caption: String, closeFriends: Boolean) {
+        if (clip.mediaUrl.isBlank()) { showToast("Could not add this reel to your story"); return }
+        if (restrictedNow()) return
+        publishMoment(caption, clip.mediaUrl, null, closeFriends)
     }
 
     fun shareClipToUsers(clip: Clip, targets: List<User>) {
