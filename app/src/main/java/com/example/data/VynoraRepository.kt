@@ -590,6 +590,9 @@ class VynoraRepository(
                                 participant = if (isGroupChat) User(id = id, username = doc.getString("groupName") ?: "Group", fullName = "${participantIds.size} members") else loadUserCached(otherUserId),
                                 messages = msgs,
                                 lastMessage = msgs.lastOrNull() ?: ChatMessage(text = lastMessageText, timestamp = "Recent"),
+                                unreadCount = (doc.get("seen_$userId") as? Number)?.toLong().let { seenAt ->
+                                    msgs.count { it.senderId != userId && it.senderId.isNotBlank() && it.createdAt > (seenAt ?: 0L) }
+                                },
                                 updatedAt = updatedAt,
                                 otherSeenAt = if (isGroupChat) 0L else (doc.get("seen_$otherUserId") as? Number)?.toLong() ?: 0L
                             )
@@ -1401,6 +1404,8 @@ class VynoraRepository(
             val base = mutableMapOf<String, Any>(
                 "id" to conversationId,
                 "lastMessage" to chatLabel(msg),
+                "lastSenderId" to me.id,
+                "lastSenderName" to me.username,
                 "updatedAt" to System.currentTimeMillis()
             )
             if (otherId != null) base["participantIds"] = listOf(me.id, otherId)

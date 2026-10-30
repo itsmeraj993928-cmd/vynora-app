@@ -75,6 +75,35 @@ class AlertsService : Service() {
             }
         }
 
+        // new chat messages (1-to-1 and groups): one phone alert per new message, never for my own
+        var firstChats = true
+        val lastNotified = HashMap<String, Long>()
+        regs += db.collection("chats").whereArrayContains("participantIds", uid).addSnapshotListener { snap, err ->
+            if (err != null || snap == null) return@addSnapshotListener
+            if (firstChats) {
+                firstChats = false
+                snap.documents.forEach { lastNotified[it.id] = it.getLong("updatedAt") ?: 0L }
+                return@addSnapshotListener
+            }
+            if (AppForeground.inForeground) {
+                snap.documents.forEach { lastNotified[it.id] = it.getLong("updatedAt") ?: 0L }
+                return@addSnapshotListener
+            }
+            for (ch in snap.documentChanges) {
+                if (ch.type == DocumentChange.Type.REMOVED) continue
+                val d = ch.document
+                val updated = d.getLong("updatedAt") ?: 0L
+                val sender = d.getString("lastSenderId") ?: continue
+                if (sender == uid || updated <= (lastNotified[d.id] ?: 0L) || updated < startedAt - 60_000L) continue
+                lastNotified[d.id] = updated
+                val isGroup = d.getBoolean("isGroup") == true
+                val who = d.getString("lastSenderName").orEmpty().ifBlank { "Someone" }
+                val title = if (isGroup) (d.getString("groupName") ?: "Group") else "@$who"
+                val body = d.getString("lastMessage").orEmpty().ifBlank { "New message" }
+                Notifier.show(this, 7300 + (d.id.hashCode() and 0xFFF), Notifier.CH_ACTIVITY, title, if (isGroup) "$who: $body" else body)
+            }
+        }
+
         // admin only: siren for every new report
         db.collection("users").document(uid).get().addOnSuccessListener { me ->
             if (me.getString("role") != "ADMIN") return@addOnSuccessListener
