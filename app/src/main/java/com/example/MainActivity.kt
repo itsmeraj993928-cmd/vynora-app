@@ -482,7 +482,15 @@ fun VynoraApp(viewModel: VynoraViewModel) {
                     onBack = { viewModel.navigateBack() },
                     isRequest = { c -> viewModel.isMessageRequest(c) },
                     loadTargets = { viewModel.loadShareTargets() },
-                    onCreateGroup = { n, us -> viewModel.createGroup(n, us) }
+                    onCreateGroup = { n, us -> viewModel.createGroup(n, us) },
+                    presence = viewModel.chatPresence.collectAsStateWithLifecycle().value,
+                    moments = uiState.moments,
+                    me = uiState.currentUser,
+                    isRefreshing = isRefreshing,
+                    onRefresh = { viewModel.refreshAll() },
+                    onRefreshPresence = { viewModel.refreshChatPresence() },
+                    onOpenMoment = { idx -> viewModel.navigateTo(ScreenDestination.MomentsViewer(idx)) },
+                    onSaveNote = { t, sg -> viewModel.saveNote(t, sg) }
                 )
             }
             is ScreenDestination.ChatRoom -> {

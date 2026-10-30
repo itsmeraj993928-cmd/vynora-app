@@ -59,6 +59,7 @@ data class User(
     val noteSong: String = "",
     val noteSongUrl: String = "",
     val noteAt: Long = 0L,
+    val lastActiveAt: Long = 0L, // last time the app was open (for the green 'Active now' dot)
     // Posting streak (days in a row with a post, reel or story)
     val streakCount: Int = 0,
     val lastStreakDay: String = "", // yyyy-MM-dd (device local day)

@@ -229,7 +229,25 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
 
     private val feedSeed: Int = kotlin.random.Random.nextInt(1000)
 
+    private val _chatPresence = MutableStateFlow<Map<String, User>>(emptyMap())
+    val chatPresence: StateFlow<Map<String, User>> = _chatPresence.asStateFlow()
+    private var presenceJob: kotlinx.coroutines.Job? = null
+
+    /** Fresh profiles of the people I chat with (online dot + notes). */
+    fun refreshChatPresence() {
+        val ids = _uiState.value.chats.filter { !it.isGroup }.map { it.participant.id }.filter { it.isNotBlank() }.distinct()
+        if (ids.isEmpty()) return
+        viewModelScope.launch { _chatPresence.value = repository.loadUsersFresh(ids) }
+    }
+
     private fun startDataObservations(userId: String) {
+        presenceJob?.cancel()
+        presenceJob = viewModelScope.launch {
+            while (true) {
+                if (AppForeground.inForeground) repository.touchActive(userId)
+                delay(60_000)
+            }
+        }
         observeJob?.cancel()
         _uiState.update { it.copy(savedFolders = loadFolders()) }
         likedIds = emptySet()
@@ -354,6 +372,7 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch {
             try {
                 startDataObservations(uid)
+                refreshChatPresence()
                 // let the first results arrive so the spinner does not vanish before the list updates
                 delay(1200)
             } finally {
