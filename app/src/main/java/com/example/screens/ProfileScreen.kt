@@ -266,7 +266,10 @@ fun ProfileScreen(
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         Text(
-                            text = user.fullName,
+                            text = user.fullName.replace('\n', ' '),
+                            maxLines = 1,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false),
                             fontWeight = FontWeight.Bold,
                             fontSize = 15.sp,
                             color = if (isDarkMode) Color.White else Color(0xFF0F172A)
@@ -967,7 +970,7 @@ fun ProfileScreen(
 
                     OutlinedTextField(
                         value = newFullName,
-                        onValueChange = { newFullName = it },
+                        onValueChange = { newFullName = it.replace("\n", " ").take(30) },
                         label = { Text("Display Name") },
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp)
