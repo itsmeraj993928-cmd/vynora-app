@@ -88,18 +88,15 @@ fun ChatsScreen(
             .windowInsetsPadding(WindowInsets.statusBars)
             .testTag("chats_screen")
     ) {
-        // --- 1. Top Bar ---
+        // --- 1. Top Bar (Instagram style) ---
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
+                .padding(horizontal = 6.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = onBack) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.ArrowBack,
@@ -108,52 +105,79 @@ fun ChatsScreen(
                     )
                 }
                 Text(
-                    text = "Chats",
-                    fontWeight = FontWeight.ExtraBold,
-                    fontSize = 22.sp,
+                    text = "Messages",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 20.sp,
                     color = if (isDarkMode) Color.White else Color(0xFF0F172A)
                 )
             }
-
             IconButton(onClick = { showGroupDialog = true }) {
                 Icon(
                     imageVector = Icons.Outlined.Edit,
                     contentDescription = "New group",
-                    tint = VynoraNeonPink
+                    tint = if (isDarkMode) Color.White else Color(0xFF0F172A)
                 )
             }
         }
 
-        // --- 2. Search Messages ---
-        OutlinedTextField(
-            value = searchQuery,
-            onValueChange = { searchQuery = it },
-            placeholder = { Text("Search messages & creators...", fontSize = 13.sp) },
-            leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null, tint = VynoraNeonCyan) },
+        // --- 2. Rounded grey search bar ---
+        val pillBg = if (isDarkMode) Color(0xFF1C1F2B) else Color(0xFFEFF1F5)
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp),
-            shape = RoundedCornerShape(20.dp),
-            singleLine = true,
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = VynoraNeonCyan,
-                focusedContainerColor = cardBg,
-                unfocusedContainerColor = cardBg
+                .padding(horizontal = 16.dp)
+                .height(44.dp)
+                .clip(RoundedCornerShape(22.dp))
+                .background(pillBg)
+                .padding(horizontal = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Icon(Icons.Outlined.Search, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(20.dp))
+            androidx.compose.foundation.text.BasicTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                singleLine = true,
+                textStyle = androidx.compose.ui.text.TextStyle(
+                    fontSize = 14.sp,
+                    color = if (isDarkMode) Color.White else Color(0xFF0F172A)
+                ),
+                cursorBrush = androidx.compose.ui.graphics.SolidColor(VynoraNeonCyan),
+                modifier = Modifier.weight(1f),
+                decorationBox = { inner ->
+                    Box(contentAlignment = Alignment.CenterStart) {
+                        if (searchQuery.isEmpty()) Text("Search", fontSize = 14.sp, color = Color.Gray)
+                        inner()
+                    }
+                }
             )
-        )
+        }
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(14.dp))
 
+        // --- 3. "Messages" + "Requests" row ---
         val requestCount = chats.count { isRequest(it) }
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            FilterChip(selected = selectedTab == 0, onClick = { selectedTab = 0 }, label = { Text("Primary") })
-            FilterChip(selected = selectedTab == 1, onClick = { selectedTab = 1 }, label = { Text("Requests ($requestCount)") })
+            Text(
+                text = if (selectedTab == 0) "Messages" else "Message requests",
+                fontWeight = FontWeight.Bold,
+                fontSize = 16.sp,
+                color = if (isDarkMode) Color.White else Color(0xFF0F172A)
+            )
+            Text(
+                text = if (selectedTab == 0) (if (requestCount > 0) "Requests ($requestCount)" else "Requests") else "Back to messages",
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 14.sp,
+                color = VynoraNeonCyan,
+                modifier = Modifier.clickable { selectedTab = if (selectedTab == 0) 1 else 0 }
+            )
         }
 
-        HorizontalDivider(color = if (isDarkMode) Color(0x22FFFFFF) else Color(0x1F000000))
+        Spacer(modifier = Modifier.height(4.dp))
 
         // --- 4. Chat List ---
         val tabChats = chats.filter { isRequest(it) == (selectedTab == 1) }
@@ -227,62 +251,57 @@ private fun ChatConversationRow(
     ) {
         StoryRingAvatar(
             avatarUrl = conversation.participant.avatarUrl,
-            size = 52.dp
+            size = 56.dp
         )
 
-        // Message Preview
+        val unread = conversation.unreadCount > 0
+        val last = conversation.lastMessage
+        val preview = if (last.isAudio) "Sent a voice message"
+            else if (last.text.startsWith("[img]")) "Sent a photo"
+            else if (last.text.startsWith("[doc]")) "Sent a document"
+            else if (parseSharedReel(last.text) != null) "Sent a reel"
+            else parseCallLog(last.text)?.let { if (it.video) "Video call" else "Voice call" }
+                ?: parseCallInvite(last.text)?.let { if (it.first) "Video call" else "Voice call" }
+                ?: last.text.replace('\n', ' ')
+        val strong = if (isDarkMode) Color.White else Color(0xFF0F172A)
+        val soft = if (isDarkMode) Color(0xFF94A3B8) else Color(0xFF64748B)
+
         Column(modifier = Modifier.weight(1f)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = conversation.participant.fullName.ifBlank { conversation.participant.username },
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 14.sp,
-                    color = if (isDarkMode) Color.White else Color(0xFF0F172A)
-                )
-                Text(
-                    text = com.example.util.timeAgo(conversation.lastMessage.createdAt),
-                    fontSize = 11.sp,
-                    color = if (isDarkMode) Color(0xFF64748B) else Color(0xFF94A3B8)
-                )
-            }
-
+            Text(
+                text = conversation.participant.fullName.ifBlank { conversation.participant.username },
+                fontWeight = if (unread) FontWeight.Bold else FontWeight.Medium,
+                fontSize = 15.sp,
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                color = strong
+            )
             Spacer(modifier = Modifier.height(2.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = if (conversation.lastMessage.isAudio) "🎤 Voice note (${conversation.lastMessage.audioDuration ?: "0:34"})" else if (conversation.lastMessage.text.startsWith("[img]")) "📷 Photo" else if (conversation.lastMessage.text.startsWith("[doc]")) "📄 Document" else if (parseSharedReel(conversation.lastMessage.text) != null) "🎬 Reel" else parseCallLog(conversation.lastMessage.text)?.let { if (it.video) "🎥 Video call" else "📞 Voice call" } ?: parseCallInvite(conversation.lastMessage.text)?.let { if (it.first) "🎥 Video call" else "📞 Voice call" } ?: conversation.lastMessage.text,
+                    text = preview,
                     fontSize = 13.sp,
-                    color = if (conversation.unreadCount > 0) (if (isDarkMode) Color.White else Color.Black) else (if (isDarkMode) Color(0xFF94A3B8) else Color(0xFF64748B)),
-                    fontWeight = if (conversation.unreadCount > 0) FontWeight.Bold else FontWeight.Normal,
+                    color = if (unread) strong else soft,
+                    fontWeight = if (unread) FontWeight.Bold else FontWeight.Normal,
                     maxLines = 1,
-                    modifier = Modifier.weight(1f)
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false)
                 )
-
-                if (conversation.unreadCount > 0) {
-                    Box(
-                        modifier = Modifier
-                            .size(18.dp)
-                            .clip(CircleShape)
-                            .background(VynoraNeonPink),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = conversation.unreadCount.toString(),
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White
-                        )
-                    }
-                }
+                Text(
+                    text = " · " + com.example.util.timeAgo(last.createdAt),
+                    fontSize = 13.sp,
+                    color = soft,
+                    maxLines = 1
+                )
             }
+        }
+
+        if (unread) {
+            Box(
+                modifier = Modifier
+                    .size(10.dp)
+                    .clip(CircleShape)
+                    .background(VynoraNeonCyan)
+            )
         }
     }
 }
