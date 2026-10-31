@@ -45,22 +45,24 @@ fun ReelStoryComposer(
             modifier = Modifier
                 .fillMaxSize()
                 .background(Color(0xFF0B0B0F))
-                .windowInsetsPadding(WindowInsets.statusBars)
-                .windowInsetsPadding(WindowInsets.navigationBars)
+                .systemBarsPadding()
                 .imePadding()
+                .padding(bottom = 18.dp)
         ) {
             IconButton(onClick = onCancel, modifier = Modifier.padding(6.dp)) {
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
             }
 
-            Box(
-                modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 28.dp),
+            BoxWithConstraints(
+                modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 24.dp, vertical = 4.dp),
                 contentAlignment = Alignment.Center
             ) {
+                // 9:16 card that always fits inside the free space
+                val cardH = minOf(maxHeight, maxWidth * 16f / 9f)
+                val cardW = cardH * 9f / 16f
                 Box(
                     modifier = Modifier
-                        .fillMaxHeight(0.96f)
-                        .aspectRatio(0.62f, matchHeightConstraintsFirst = true)
+                        .size(cardW, cardH)
                         .clip(RoundedCornerShape(18.dp))
                         .background(Color.Black)
                 ) {
@@ -76,7 +78,7 @@ fun ReelStoryComposer(
                         onRelease = { vv -> try { vv.stopPlayback() } catch (_: Throwable) { } }
                     )
                     Text(
-                        text = clip.author.username,
+                        text = "@" + clip.author.username,
                         color = Color.White,
                         fontSize = 13.sp,
                         fontWeight = FontWeight.SemiBold,
