@@ -147,6 +147,9 @@ data class Moment(
     val reportCount: Int = 0,
     val mediaUrl: String = "",
     val textOverlay: String? = null,
+    val overlayX: Float = 0.5f, // where the text/stickers sit (0..1 of the screen)
+    val overlayY: Float = 0.5f,
+    val overlayScale: Float = 1f,
     val musicTrack: String? = null,
     val musicUrl: String = "",
     val pollQuestion: String = "",

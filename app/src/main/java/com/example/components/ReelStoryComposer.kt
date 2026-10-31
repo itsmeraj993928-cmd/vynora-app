@@ -12,6 +12,9 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -33,7 +36,7 @@ import com.example.model.User
 fun ReelStoryComposer(
     clip: Clip,
     me: User?,
-    onShare: (caption: String, closeFriends: Boolean, music: com.example.util.MusicTrack?) -> Unit,
+    onShare: (caption: String, closeFriends: Boolean, music: com.example.util.MusicTrack?, x: Float, y: Float, scale: Float) -> Unit,
     onCancel: () -> Unit
 ) {
     var caption by remember { mutableStateOf("") }
@@ -45,6 +48,9 @@ fun ReelStoryComposer(
     val bgTop = remember(clip.id) { listOf(Color(0xFF7C8DB5), Color(0xFF8B6FA8), Color(0xFF5E9C9A), Color(0xFFB57C7C))[(clip.id.hashCode() and 0x7fffffff) % 4] }
     fun overlayText(): String = (items.toList() + caption.trim()).filter { it.isNotBlank() }.joinToString("  ")
     val appActive by com.example.util.rememberAppActive()
+    var ox by remember { mutableStateOf(0.5f) }
+    var oy by remember { mutableStateOf(0.5f) }
+    var oscale by remember { mutableStateOf(1f) }
     Dialog(
         onDismissRequest = onCancel,
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
@@ -110,8 +116,21 @@ fun ReelStoryComposer(
                         modifier = Modifier.align(Alignment.TopStart).padding(12.dp)
                     )
                     // things I added (tap to remove)
+                    val cardWpx = with(androidx.compose.ui.platform.LocalDensity.current) { cardW.toPx() }
+                    val cardHpx = with(androidx.compose.ui.platform.LocalDensity.current) { cardH.toPx() }
                     Column(
-                        modifier = Modifier.align(Alignment.Center).padding(12.dp),
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .offset { androidx.compose.ui.unit.IntOffset(((ox - 0.5f) * cardWpx).toInt(), ((oy - 0.5f) * cardHpx).toInt()) }
+                            .graphicsLayer(scaleX = oscale, scaleY = oscale)
+                            .pointerInput(Unit) {
+                                detectTransformGestures { _, pan, zoom, _ ->
+                                    ox = (ox + pan.x * oscale / cardWpx).coerceIn(0.1f, 0.9f)
+                                    oy = (oy + pan.y * oscale / cardHpx).coerceIn(0.1f, 0.9f)
+                                    oscale = (oscale * zoom).coerceIn(0.5f, 3f)
+                                }
+                            }
+                            .padding(12.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
@@ -158,7 +177,7 @@ fun ReelStoryComposer(
                         .weight(1f)
                         .clip(RoundedCornerShape(24.dp))
                         .background(Color(0xFF23242B))
-                        .clickable { onShare(overlayText(), false, song) }
+                        .clickable { onShare(overlayText(), false, song, ox, oy, oscale) }
                         .padding(horizontal = 14.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -171,7 +190,7 @@ fun ReelStoryComposer(
                         .weight(1f)
                         .clip(RoundedCornerShape(24.dp))
                         .background(Color(0xFF23242B))
-                        .clickable { onShare(overlayText(), true, song) }
+                        .clickable { onShare(overlayText(), true, song, ox, oy, oscale) }
                         .padding(horizontal = 14.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)

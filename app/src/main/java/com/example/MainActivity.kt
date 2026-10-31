@@ -831,8 +831,8 @@ fun VynoraApp(viewModel: VynoraViewModel) {
             com.example.components.ReelStoryComposer(
                 clip = c,
                 me = uiState.currentUser,
-                onShare = { cap, close, music ->
-                    viewModel.addClipToStory(c, cap, close, music?.pack())
+                onShare = { cap, close, music, ox, oy, sc ->
+                    viewModel.addClipToStory(c, cap, close, music?.pack(), ox, oy, sc)
                     storyClip = null
                 },
                 onCancel = { storyClip = null }
