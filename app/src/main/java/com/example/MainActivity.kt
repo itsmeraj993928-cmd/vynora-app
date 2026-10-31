@@ -144,6 +144,7 @@ fun VynoraApp(viewModel: VynoraViewModel) {
     val isRefreshing by viewModel.isRefreshing.collectAsStateWithLifecycle()
     val pollVotes by viewModel.pollVotes.collectAsStateWithLifecycle()
     var shareClip by remember { mutableStateOf<com.example.model.Clip?>(null) }
+    var storyClip by remember { mutableStateOf<com.example.model.Clip?>(null) }
 
     // Handle Android system back press
     val hostContext = androidx.compose.ui.platform.LocalContext.current
@@ -826,6 +827,18 @@ fun VynoraApp(viewModel: VynoraViewModel) {
             )
         }
 
+        storyClip?.let { c ->
+            com.example.components.ReelStoryComposer(
+                clip = c,
+                me = uiState.currentUser,
+                onShare = { cap, close ->
+                    viewModel.addClipToStory(c, cap, close)
+                    storyClip = null
+                },
+                onCancel = { storyClip = null }
+            )
+        }
+
         // 1b. Reel share sheet (in-app, Instagram style)
         shareClip?.let { clipToShare ->
             val shareText = "Watch this reel by @${clipToShare.author.username} on VYNORA: ${clipToShare.mediaUrl}"
@@ -838,7 +851,7 @@ fun VynoraApp(viewModel: VynoraViewModel) {
                     shareClip = null
                 },
                 onAddToStory = {
-                    viewModel.addClipToStory(clipToShare)
+                    storyClip = clipToShare
                     shareClip = null
                 },
                 onCopyLink = {

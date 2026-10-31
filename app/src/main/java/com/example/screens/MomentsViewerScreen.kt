@@ -70,6 +70,10 @@ fun MomentsViewerScreen(
     var currentIndex by remember { mutableStateOf(group.indexOfFirst { it.id == startMoment.id }.coerceAtLeast(0)) }
     val safeIndex = currentIndex.coerceIn(0, group.lastIndex)
     val currentMoment = group[safeIndex]
+    val isVideoMoment = currentMoment.mediaUrl.let { u ->
+        val base = u.substringBefore('?').lowercase()
+        u.contains("/video/upload/") || base.endsWith(".mp4") || base.endsWith(".mov") || base.endsWith(".webm") || base.endsWith(".3gp")
+    }
     var showDeleteStory by remember { mutableStateOf(false) }
     if (showDeleteStory) {
         AlertDialog(
@@ -149,7 +153,7 @@ fun MomentsViewerScreen(
         if (!isPaused && !showViewersSheet) {
             progressAnim.animateTo(
                 targetValue = 1f,
-                animationSpec = tween(durationMillis = 4500, easing = LinearEasing)
+                animationSpec = tween(durationMillis = if (isVideoMoment) 15000 else 4500, easing = LinearEasing)
             )
             // Move to next story / next person, or close if last
             goNext()
@@ -165,7 +169,25 @@ fun MomentsViewerScreen(
             .testTag("moments_viewer_screen")
     ) {
         // --- 1. Moment Media ---
-        AsyncImage(
+        if (isVideoMoment) {
+            key(currentMoment.id) {
+                androidx.compose.ui.viewinterop.AndroidView(
+                    modifier = Modifier.fillMaxSize(),
+                    factory = { ctx ->
+                        android.widget.VideoView(ctx).apply {
+                            setOnPreparedListener { mp -> mp.isLooping = true; start() }
+                            setOnErrorListener { _, _, _ -> true }
+                            setVideoURI(android.net.Uri.parse(currentMoment.mediaUrl))
+                        }
+                    },
+                    update = { vv ->
+                        if (isPaused || showViewersSheet) { if (vv.isPlaying) vv.pause() }
+                        else if (!vv.isPlaying) vv.start()
+                    },
+                    onRelease = { vv -> try { vv.stopPlayback() } catch (_: Throwable) { } }
+                )
+            }
+        } else AsyncImage(
             model = currentMoment.mediaUrl,
             contentDescription = "Moment Media",
             modifier = Modifier.fillMaxSize(),
