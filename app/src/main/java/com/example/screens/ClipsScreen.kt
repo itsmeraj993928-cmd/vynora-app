@@ -249,9 +249,10 @@ private fun ClipItemView(
             }
     ) {
         // Real video player
+        val appActive by com.example.util.rememberAppActive()
         ClipVideoPlayer(
             url = clip.mediaUrl,
-            shouldPlay = isPlaying && isCurrentPage,
+            shouldPlay = isPlaying && isCurrentPage && appActive,
             isMuted = isMuted,
             musicUrl = clip.musicUrl,
             posterUrl = com.example.util.reelPoster(clip.mediaUrl, clip.thumbnailUrl),

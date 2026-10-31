@@ -33,10 +33,18 @@ import com.example.model.User
 fun ReelStoryComposer(
     clip: Clip,
     me: User?,
-    onShare: (caption: String, closeFriends: Boolean) -> Unit,
+    onShare: (caption: String, closeFriends: Boolean, music: com.example.util.MusicTrack?) -> Unit,
     onCancel: () -> Unit
 ) {
     var caption by remember { mutableStateOf("") }
+    val items = remember { mutableStateListOf<String>() }          // text, stickers, mentions put on the story
+    var song by remember { mutableStateOf<com.example.util.MusicTrack?>(null) }
+    var dialog by remember { mutableStateOf("") }                    // "", "text", "sticker", "mention"
+    var typed by remember { mutableStateOf("") }
+    var showMusic by remember { mutableStateOf(false) }
+    val bgTop = remember(clip.id) { listOf(Color(0xFF7C8DB5), Color(0xFF8B6FA8), Color(0xFF5E9C9A), Color(0xFFB57C7C))[(clip.id.hashCode() and 0x7fffffff) % 4] }
+    fun overlayText(): String = (items.toList() + caption.trim()).filter { it.isNotBlank() }.joinToString("  ")
+    val appActive by com.example.util.rememberAppActive()
     Dialog(
         onDismissRequest = onCancel,
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
@@ -44,13 +52,29 @@ fun ReelStoryComposer(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color(0xFF0B0B0F))
+                .background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(bgTop, Color(0xFF3A2E2E))))
                 .systemBarsPadding()
                 .imePadding()
                 .padding(bottom = 18.dp)
         ) {
-            IconButton(onClick = onCancel, modifier = Modifier.padding(6.dp)) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
+            Row(modifier = Modifier.fillMaxWidth().padding(6.dp), verticalAlignment = Alignment.Top) {
+                IconButton(onClick = onCancel) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
+                }
+                Spacer(Modifier.weight(1f))
+                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    @Composable
+                    fun Tool(label: String, onClick: () -> Unit, content: @Composable () -> Unit) {
+                        Box(
+                            modifier = Modifier.size(44.dp).clip(CircleShape).background(Color(0x55000000)).clickable(onClick = onClick),
+                            contentAlignment = Alignment.Center
+                        ) { content() }
+                    }
+                    Tool("Text", { typed = ""; dialog = "text" }) { Text("Aa", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 17.sp) }
+                    Tool("Sticker", { dialog = "sticker" }) { Text("😊", fontSize = 20.sp) }
+                    Tool("Music", { showMusic = true }) { Text("♫", color = Color.White, fontSize = 20.sp) }
+                    Tool("Mention", { typed = ""; dialog = "mention" }) { Text("@", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 20.sp) }
+                }
             }
 
             BoxWithConstraints(
@@ -75,6 +99,7 @@ fun ReelStoryComposer(
                                 setVideoURI(Uri.parse(clip.mediaUrl))
                             }
                         },
+                        update = { vv -> if (appActive) { if (!vv.isPlaying) vv.start() } else if (vv.isPlaying) vv.pause() },
                         onRelease = { vv -> try { vv.stopPlayback() } catch (_: Throwable) { } }
                     )
                     Text(
@@ -84,6 +109,27 @@ fun ReelStoryComposer(
                         fontWeight = FontWeight.SemiBold,
                         modifier = Modifier.align(Alignment.TopStart).padding(12.dp)
                     )
+                    // things I added (tap to remove)
+                    Column(
+                        modifier = Modifier.align(Alignment.Center).padding(12.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items.forEachIndexed { i, t ->
+                            Text(
+                                text = t, color = Color.White, fontSize = if (t.length <= 2) 44.sp else 20.sp, fontWeight = FontWeight.Bold,
+                                modifier = Modifier.clip(RoundedCornerShape(10.dp)).background(if (t.length <= 2) Color.Transparent else Color(0x66000000))
+                                    .clickable { items.removeAt(i) }.padding(horizontal = 10.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
+                    song?.let { sg ->
+                        Text(
+                            text = "♫ " + sg.label, color = Color.White, fontSize = 12.sp, maxLines = 1,
+                            modifier = Modifier.align(Alignment.BottomStart).padding(12.dp).clip(RoundedCornerShape(12.dp))
+                                .background(Color(0x77000000)).clickable { song = null }.padding(horizontal = 10.dp, vertical = 5.dp)
+                        )
+                    }
                 }
             }
 
@@ -112,7 +158,7 @@ fun ReelStoryComposer(
                         .weight(1f)
                         .clip(RoundedCornerShape(24.dp))
                         .background(Color(0xFF23242B))
-                        .clickable { onShare(caption.trim(), false) }
+                        .clickable { onShare(overlayText(), false, song) }
                         .padding(horizontal = 14.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -125,7 +171,7 @@ fun ReelStoryComposer(
                         .weight(1f)
                         .clip(RoundedCornerShape(24.dp))
                         .background(Color(0xFF23242B))
-                        .clickable { onShare(caption.trim(), true) }
+                        .clickable { onShare(overlayText(), true, song) }
                         .padding(horizontal = 14.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -137,6 +183,60 @@ fun ReelStoryComposer(
                     Text("Close Friends", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                 }
             }
+        }
+
+        if (showMusic) {
+            com.example.screens.MusicPickerSheet(
+                isDarkMode = true,
+                onPick = { song = it; showMusic = false },
+                onDismiss = { showMusic = false }
+            )
+        }
+        if (dialog == "text" || dialog == "mention") {
+            AlertDialog(
+                onDismissRequest = { dialog = "" },
+                title = { Text(if (dialog == "text") "Add text" else "Mention someone") },
+                text = {
+                    OutlinedTextField(
+                        value = typed, onValueChange = { typed = it.take(40) }, singleLine = true,
+                        placeholder = { Text(if (dialog == "text") "Type something" else "username") }
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        val t = typed.trim().removePrefix("@")
+                        if (t.isNotBlank()) items.add(if (dialog == "mention") "@$t" else t)
+                        dialog = ""
+                    }) { Text("Add") }
+                },
+                dismissButton = { TextButton(onClick = { dialog = "" }) { Text("Cancel") } }
+            )
+        }
+        if (dialog == "sticker") {
+            AlertDialog(
+                onDismissRequest = { dialog = "" },
+                title = { Text("Stickers") },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        listOf("😂😍🔥❤️😎", "🥳👏💯✨🙌", "😭😡🤩😮🤔", "🎉🎶⭐💥🚀").forEach { rowEmojis ->
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                rowEmojis.codePoints().toArray().let { cps ->
+                                    // split into emoji glyphs (variation selector stays with its emoji)
+                                    val glyphs = mutableListOf<String>()
+                                    cps.forEach { cp ->
+                                        val ch = String(Character.toChars(cp))
+                                        if (cp == 0xFE0F && glyphs.isNotEmpty()) glyphs[glyphs.size - 1] = glyphs.last() + ch else glyphs.add(ch)
+                                    }
+                                    glyphs.forEach { g ->
+                                        Text(g, fontSize = 30.sp, modifier = Modifier.clickable { items.add(g); dialog = "" }.padding(4.dp))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                confirmButton = { TextButton(onClick = { dialog = "" }) { Text("Close") } }
+            )
         }
     }
 }

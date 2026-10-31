@@ -490,6 +490,14 @@ fun ChatRoomScreen(
     var aiReplies by remember { mutableStateOf<List<String>>(emptyList()) }
     var aiBusy by remember { mutableStateOf(false) }
 
+    val appActive by com.example.util.rememberAppActive()
+    LaunchedEffect(appActive) {
+        if (!appActive) {
+            try { player?.release() } catch (e: Exception) { }
+            player = null
+            playingMessageId = null
+        }
+    }
     DisposableEffect(Unit) {
         onDispose {
             try { player?.release() } catch (e: Exception) { }

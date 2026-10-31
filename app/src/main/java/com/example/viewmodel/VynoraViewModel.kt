@@ -1267,10 +1267,10 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     /** Put a reel on my story (the reel plays as the story video). */
-    fun addClipToStory(clip: Clip, caption: String, closeFriends: Boolean) {
+    fun addClipToStory(clip: Clip, caption: String, closeFriends: Boolean, music: String? = null) {
         if (clip.mediaUrl.isBlank()) { showToast("Could not add this reel to your story"); return }
         if (restrictedNow()) return
-        publishMoment(caption, clip.mediaUrl, null, closeFriends)
+        publishMoment(caption, clip.mediaUrl, music, closeFriends)
     }
 
     fun shareClipToUsers(clip: Clip, targets: List<User>) {

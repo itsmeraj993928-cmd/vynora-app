@@ -104,6 +104,8 @@ fun MomentsViewerScreen(
     var showViewersSheet by remember { mutableStateOf(false) }
 
     val progressAnim = remember { Animatable(0f) }
+    val appActive by com.example.util.rememberAppActive()
+    LaunchedEffect(appActive) { isPaused = !appActive }
 
     // Story music: play the attached song while this story is on screen
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -175,7 +177,7 @@ fun MomentsViewerScreen(
                     modifier = Modifier.fillMaxSize(),
                     factory = { ctx ->
                         android.widget.VideoView(ctx).apply {
-                            setOnPreparedListener { mp -> mp.isLooping = true; start() }
+                            setOnPreparedListener { mp -> mp.isLooping = true; if (currentMoment.musicUrl.isNotBlank()) mp.setVolume(0f, 0f); start() }
                             setOnErrorListener { _, _, _ -> true }
                             setVideoURI(android.net.Uri.parse(currentMoment.mediaUrl))
                         }
