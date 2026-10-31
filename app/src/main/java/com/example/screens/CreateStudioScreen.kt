@@ -1104,6 +1104,8 @@ internal fun MusicPickerSheet(
         playingUrl = null
     }
     DisposableEffect(Unit) { onDispose { stopPlayer() } }
+    val appActiveMp by com.example.util.rememberAppActive()
+    LaunchedEffect(appActiveMp) { if (!appActiveMp) stopPlayer() }
 
     fun togglePreview(t: com.example.util.MusicTrack) {
         if (playingUrl == t.previewUrl) { stopPlayer(); return }

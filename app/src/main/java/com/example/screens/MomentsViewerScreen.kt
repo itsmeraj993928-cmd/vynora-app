@@ -22,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
@@ -104,6 +105,8 @@ fun MomentsViewerScreen(
     var showViewersSheet by remember { mutableStateOf(false) }
 
     val progressAnim = remember { Animatable(0f) }
+    val appActive by com.example.util.rememberAppActive()
+    LaunchedEffect(appActive) { isPaused = !appActive }
 
     // Story music: play the attached song while this story is on screen
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -175,7 +178,7 @@ fun MomentsViewerScreen(
                     modifier = Modifier.fillMaxSize(),
                     factory = { ctx ->
                         android.widget.VideoView(ctx).apply {
-                            setOnPreparedListener { mp -> mp.isLooping = true; start() }
+                            setOnPreparedListener { mp -> mp.isLooping = true; if (currentMoment.musicUrl.isNotBlank()) mp.setVolume(0f, 0f); start() }
                             setOnErrorListener { _, _, _ -> true }
                             setVideoURI(android.net.Uri.parse(currentMoment.mediaUrl))
                         }
@@ -397,13 +400,18 @@ fun MomentsViewerScreen(
 
         // --- 4. Center Text Overlay ---
         if (currentMoment.textOverlay != null) {
-            Box(
+            BoxWithConstraints(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(32.dp),
                 contentAlignment = Alignment.Center
             ) {
+                val dx = (currentMoment.overlayX - 0.5f) * constraints.maxWidth
+                val dy = (currentMoment.overlayY - 0.5f) * constraints.maxHeight
                 Surface(
+                    modifier = Modifier
+                        .offset { androidx.compose.ui.unit.IntOffset(dx.toInt(), dy.toInt()) }
+                        .graphicsLayer(scaleX = currentMoment.overlayScale, scaleY = currentMoment.overlayScale),
                     shape = RoundedCornerShape(16.dp),
                     color = Color.Black.copy(alpha = 0.55f),
                     border = androidx.compose.foundation.BorderStroke(1.dp, VynoraNeonPink.copy(alpha = 0.5f))

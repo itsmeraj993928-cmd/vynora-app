@@ -1267,10 +1267,10 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     /** Put a reel on my story (the reel plays as the story video). */
-    fun addClipToStory(clip: Clip, caption: String, closeFriends: Boolean) {
+    fun addClipToStory(clip: Clip, caption: String, closeFriends: Boolean, music: String? = null, ox: Float = 0.5f, oy: Float = 0.5f, scale: Float = 1f) {
         if (clip.mediaUrl.isBlank()) { showToast("Could not add this reel to your story"); return }
         if (restrictedNow()) return
-        publishMoment(caption, clip.mediaUrl, null, closeFriends)
+        publishMoment(caption, clip.mediaUrl, music, closeFriends, overlayX = ox, overlayY = oy, overlayScale = scale)
     }
 
     fun shareClipToUsers(clip: Clip, targets: List<User>) {
@@ -1939,7 +1939,10 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
         visibility: String = "PUBLIC",
         pollQuestion: String = "",
         pollOptionA: String = "",
-        pollOptionB: String = ""
+        pollOptionB: String = "",
+        overlayX: Float = 0.5f,
+        overlayY: Float = 0.5f,
+        overlayScale: Float = 1f
     ) {
         val user = _uiState.value.currentUser ?: return
         bumpStreak()
@@ -1950,6 +1953,7 @@ class VynoraViewModel(application: Application) : AndroidViewModel(application) 
             authorId = user.id,
             mediaUrl = mediaUrl,
             textOverlay = textOverlay,
+            overlayX = overlayX, overlayY = overlayY, overlayScale = overlayScale,
             musicTrack = musicLabel.ifBlank { null },
             musicUrl = musicUrl,
             pollQuestion = pollQuestion,
